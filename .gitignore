@@ -1,0 +1,30 @@
+# Local secrets; keep the distributable example.
+.env*
+!.env.example
+
+# Runtime data and local Python tooling.
+data/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend build and browser test output.
+node_modules/
+frontend/dist/
+frontend/coverage/
+playwright-report/
+test-results/
+
+# Local document/config snapshots taken before major decisions.
+archive/
+
+# Database backups (may contain private source data).
+backups/
+*.dump
+*.dump.partial
+.pgpass
+pgpass.conf
