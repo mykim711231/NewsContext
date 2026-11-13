@@ -232,9 +232,9 @@ Part A는 **LLMs4OL의 과제 분해 + CQ4OE의 CQ coverage + EDC의 추출/정�
 | openai | `OPENAI_MODEL=gpt-4o-mini` | `OPENAI_API_KEY` |
 | anthropic | `ANTHROPIC_MODEL=claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | deepseek | `DEEPSEEK_MODEL=deepseek-flash` | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com` |
-| ollama | `OLLAMA_MODEL`에 준비된 모델 지정 | `OLLAMA_BASE_URL=http://127.0.0.1:11434`, `OLLAMA_API_KEY`는 인증 서버에서 사용 |
+| ollama | `OLLAMA_MODEL`에 구독으로 쓸 수 있는 모델 지정 | **월 구독 후 API 키로 사용(2026-11-13 사용자 결정, 로컬 구동 아님)**: `OLLAMA_API_KEY` 필수, `OLLAMA_BASE_URL`은 구독 서비스 주소(공식 문서에서 확인 후 확정) |
 
-설정 로더는 선택한 공급자에 필요한 항목만 검증하고, 알 수 없는 공급자·빈 모델·필수 인증 누락은 실행 전에 오류로 처리합니다. 인증이 없는 로컬 Ollama의 빈 API 키는 허용합니다. 선택하지 않은 공급자로 자동 전환하지 않으며 처리 이력에는 실제 사용한 공급자·모델·접속 대상을 비밀값 없이 기록합니다.
+설정 로더는 선택한 공급자에 필요한 항목만 검증하고, 알 수 없는 공급자·빈 모델·필수 인증 누락은 실행 전에 오류로 처리합니다. Ollama는 구독 API 키 사용이 전제라 빈 API 키를 허용하지 않습니다(로컬 Ollama는 지원 대상 아님). 구독 모델의 요청 한도·이용 조건과 구조화 출력 지원은 통합 단계에서 확인합니다. 선택하지 않은 공급자로 자동 전환하지 않으며 처리 이력에는 실제 사용한 공급자·모델·접속 대상을 비밀값 없이 기록합니다.
 
 설정 예시는 [.env.example](.env.example)에 정리했습니다. Supabase DB 접속 문자열과 선택한 LLM 공급자·모델·API 키를 입력해야 합니다. 기존 `.env`가 있으면 필요한 키만 병합하고, 새 환경에서만 예시 파일을 `.env`로 복사합니다. 수집 정책과 재시도·비용 예산은 YAML 설정으로 관리하며 환경변수에는 해당 경로를 지정합니다. 현재 환경변수는 구현할 설정 계약으로, `config.py`와 시작 코드 연결 전에는 자동 적용되지 않습니다.
 
