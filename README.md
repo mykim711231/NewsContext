@@ -611,3 +611,7 @@ TP·FP·FN과 판정 규칙을 함께 기록하며 분모가 0인 precision/reca
 | [LangGraph 공식 문서](https://docs.langchain.com/oss/python/langgraph/overview) | 상태·노드·분기·영속 실행 역할 | 처리 워크플로와 검토·재개 설계 참고 |
 
 참조 폴더의 학습 예제를 운영 검증이 끝난 구현으로 간주하지 않습니다. 이 기획서는 참조 자료를 바탕으로 작성한 신규 설계이며, DB 생성·뉴스 수집·LLM 호출·Neo4j 적재는 아직 실행하지 않았습니다.
+
+## 라이선스
+
+Apache License 2.0 ([LICENSE](LICENSE)). 기사 본문·말뭉치 등 외부 데이터는 이 라이선스 대상이 아니며 저장소에 포함하지 않습니다.
