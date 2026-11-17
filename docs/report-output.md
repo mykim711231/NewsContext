@@ -64,9 +64,9 @@ Part A는 지원 질문 유형·온톨로지·절별 근거·반례·검증 기�
 
 ## 4. 구조화 정본·인용·버전
 
-보고서 정본은 구조화 JSON이고 Markdown은 결정적 renderer로 생성합니다. 핵심 필드는 question, scope, time_policy, cutoff_at, corpus_manifest, analysis_contract_version, ontology_version, kg_snapshot_id, kg_manifest_hash, sections, statements, citations, search_trace, limitations, validation_results, generation_versions입니다. Part A의 KG 구축 작업·적재 버전을 기록해 원문과 파생 결과의 대조 경로도 유지합니다. snapshot은 앱의 불변 manifest이며 Aura 물리 백업을 뜻하지 않습니다.
+보고서 정본은 구조화 JSON이고 Markdown은 결정적 renderer로 생성합니다. 핵심 필드는 question, scope, time_policy, cutoff_at, corpus_manifest, analysis_contract_version, ontology_version, kg_snapshot_id, kg_manifest_hash, sections, statements, citations, search_trace, limitations, validation_results, generation_versions입니다. Part A의 KG 구축 작업·적재 버전을 기록해 원문과 파생 결과의 대조 경로도 유지합니다. snapshot은 앱의 불변 manifest이며 DB 물리 백업을 뜻하지 않습니다.
 
-KG 조회는 manifest 소속 주장·관계 ID와 버전 범위로 제한합니다. 현재 Aura의 최신 노드만 조회한 뒤 과거 snapshot을 사용했다고 표시하지 않습니다. 정정으로 최신 그래프가 바뀌어도 기존 snapshot의 참조와 증거가 재현되어야 하며, 삭제되어 재현할 수 없으면 해당 snapshot·보고서를 사용 불가/철회 상태로 처리합니다. Part B의 분석 결과·규칙 도출·가설은 보고서 결과로 저장하고 원본 KG에 새 사실로 적재하지 않습니다.
+KG 조회는 manifest 소속 주장·관계 ID와 버전 범위로 제한합니다. 그래프 테이블의 최신 노드만 조회한 뒤 과거 snapshot을 사용했다고 표시하지 않습니다. 정정으로 최신 그래프가 바뀌어도 기존 snapshot의 참조와 증거가 재현되어야 하며, 삭제되어 재현할 수 없으면 해당 snapshot·보고서를 사용 불가/철회 상태로 처리합니다. Part B의 분석 결과·규칙 도출·가설은 보고서 결과로 저장하고 원본 KG에 새 사실로 적재하지 않습니다.
 
 주요 사실 문장에는 statement_id와 하나 이상의 citation_id를 연결합니다. 인용은 article_version_id·claim_id·evidence_id·원문 해시·구간·URL까지 추적합니다. 규칙 결과는 규칙 ID와 입력 주장, 가설은 탐색 경로와 미검증 상태를 추가합니다. 인용이 존재하는 것과 해당 문장을 의미적으로 뒷받침하는 것은 별도 검사입니다. 모든 문장에 무의미한 인용을 강제로 붙이지 않고 실질적 주장을 검사합니다.
 
@@ -74,7 +74,7 @@ KG 조회는 manifest 소속 주장·관계 ID와 버전 범위로 제한합니�
 
 작업 상태는 queued/running/waiting_review/waiting_part_a/completed/failed/cancelled, 보고서 버전 상태는 draft/needs_revision/approved/published/withdrawn으로 분리합니다. approved에서 명시적 publish를 거쳐 공개합니다. 공개 버전은 수정하지 않고 새 draft가 검토된 뒤 published 포인터를 바꿉니다. 승인 대상 해시는 보고서 content·인용 manifest·분석 계약 버전·온톨로지 버전·KG snapshot을 포함합니다. 새 보고서가 다른 원문·계약·snapshot을 사용하면 기존 승인을 재사용하지 않습니다. 원문 정정이 발생했다고 과거 보고서의 고정 입력을 덮어쓰지 않으며, 영향 검토 후 구버전 경고·철회 또는 새 버전 발행을 선택합니다.
 
-초안·검토·공개 정보는 Supabase에 저장하고 dump에 포함합니다. Render는 published 버전만 조회하며 Markdown 파일을 임시 디스크에 저장하지 않고 저장된 정본으로 응답합니다. 원문 비공개 범위가 있다면 공개 인용은 별도로 필터링하고 내부 원문 전체를 Markdown에 포함하지 않습니다.
+초안·검토·공개 정보는 로컬 PostgreSQL(정본)에 저장하고 dump에 포함합니다. 공개 데모(Render, 향후)는 export된 published 버전만 조회하며 Markdown 파일을 임시 디스크에 저장하지 않고 저장된 정본으로 응답합니다. 원문 비공개 범위가 있다면 공개 인용은 별도로 필터링하고 내부 원문 전체를 Markdown에 포함하지 않습니다.
 
 ## 5. API·화면
 

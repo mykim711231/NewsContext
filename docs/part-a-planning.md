@@ -52,13 +52,13 @@ LLM은 표본·업무 질문으로 타입·관계·속성·제약 후보를 생�
 
 별칭·기간·참여자·수치를 비교하되 동명 대상과 모호한 사건은 보류합니다. 문서별 Claim과 공통 Event는 분리하고 다른 기사에 같은 문장이 있다는 이유만으로 독립 검증 사실로 승격하지 않습니다. 기사에 귀속된 원인 설명은 REPORTED_CAUSE로 표현합니다.
 
-Supabase는 원문·검증 결과·적재 입력의 정본이고 AuraDB는 재구축 가능한 관계 조회 저장소입니다. 논리 참조·소속·삭제 제한은 프로그램이 검사하고 FK를 생성하지 않습니다. 그래프 쓰기는 고유 ID·트랜잭션·멱등 키로 제어하며 checkpoint와 업무 쓰기의 자동 원자성을 가정하지 않습니다.
+로컬 PostgreSQL은 원문·검증 결과·적재 입력의 정본이며 지식그래프도 같은 DB의 그래프 테이블(노드·관계·snapshot membership)에 둡니다([README 그래프 저장 방침](../README.md), 2026-11-17). 논리 참조·소속·삭제 제한은 프로그램이 검사하고 FK를 생성하지 않습니다. 그래프 쓰기는 고유 ID·멱등 키로 제어하고 업무 상태와 같은 트랜잭션에 묶습니다. checkpoint와 업무 쓰기의 자동 원자성은 가정하지 않습니다.
 
 ### A4. Part B 인계 자료 확정
 
 `verify_graph_batch → freeze_kg_manifest → validate_report_readiness → publish_kg_snapshot`
 
-인계는 `analysis_contract_version`, `ontology_version`, `kg_snapshot_id`와 corpus manifest·적재 버전·근거 상태를 포함합니다. snapshot은 Aura의 물리 스냅샷이 아니라 **보고서 입력을 고정하는 논리 manifest**입니다. 각 구성요소의 ID·해시·버전을 Supabase에 보관하며 조회는 snapshot의 허용 범위에 한정합니다. 입력을 재현할 수 없는 최신 속성 덮어쓰기는 피합니다.
+인계는 `analysis_contract_version`, `ontology_version`, `kg_snapshot_id`와 corpus manifest·적재 버전·근거 상태를 포함합니다. snapshot은 그래프 DB의 물리 스냅샷이 아니라 **보고서 입력을 고정하는 논리 manifest**입니다. 각 구성요소의 ID·해시·버전을 PostgreSQL에 보관하며 조회는 snapshot의 허용 범위에 한정합니다. 입력을 재현할 수 없는 최신 속성 덮어쓰기는 피합니다.
 
 상태는 building/validating/ready/withdrawn/failed로 두고 ready 자료만 Part B가 사용합니다. 공개 보고서가 참조한 원문·Claim·근거는 다른 프로젝트의 정정 작업으로 조용히 삭제되지 않도록 합니다. 정정 시 새 snapshot과 보고서 버전을 생성하고 기존 결과의 공개 유효성은 별도 검토합니다.
 
@@ -72,13 +72,13 @@ Supabase는 원문·검증 결과·적재 입력의 정본이고 AuraDB는 재�
 | AnalysisContract·OntologyVersion | 추출·분석·보고서 작성 계약 |
 | KGSnapshot·Manifest | 보고서에 사용 가능한 KG·원문·검증 결과 집합 |
 
-Supabase에는 analysis_contract_versions/reviews, ontology_versions/reviews, processing_jobs, extraction_results, kg_snapshots, kg_snapshot_items를 저장합니다. 참조 컬럼에는 일반/고유 인덱스를 두고 PK·프로젝트 소속·버전 존재를 공통 함수에서 검사합니다. Agent 역할 카탈로그나 ResearchPlan 저장소는 도입하지 않습니다.
+PostgreSQL에는 analysis_contract_versions/reviews, ontology_versions/reviews, processing_jobs, extraction_results, kg_snapshots, kg_snapshot_items를 저장합니다. 참조 컬럼에는 일반/고유 인덱스를 두고 PK·프로젝트 소속·버전 존재를 공통 함수에서 검사합니다. Agent 역할 카탈로그나 ResearchPlan 저장소는 도입하지 않습니다.
 
 ## 5. LangGraph와 Agent 경계
 
 A1 후보 생성·A2 구조화 추출은 LLM을 사용하는 단계이며 자동으로 자율 Agent라 부르지 않습니다. 등록된 도구 중 추가 표본·개체 조회나 근거 확인을 모델이 선택할 때에만 제한된 Agent로 정의합니다. 함수 파이프라인과 StateGraph가 순서·조건 분기·예산·검토 대기·재개를 제어합니다.
 
-동일 작업의 thread_id와 입력 해시·코드/모델/프롬프트 버전을 보존합니다. 체크포인트는 Supabase의 langgraph 스키마에 저장합니다. 승인 대상이 바뀌면 재검토하고 외부 쓰기는 재실행에도 중복되지 않도록 합니다. 프로그램 삭제·승인·공개는 Agent의 자유 도구로 제공하지 않습니다.
+동일 작업의 thread_id와 입력 해시·코드/모델/프롬프트 버전을 보존합니다. 체크포인트는 로컬 PostgreSQL의 langgraph 스키마에 저장합니다. 승인 대상이 바뀌면 재검토하고 외부 쓰기는 재실행에도 중복되지 않도록 합니다. 프로그램 삭제·승인·공개는 Agent의 자유 도구로 제공하지 않습니다.
 
 ## 6. 관리자 기능과 API
 
@@ -94,13 +94,13 @@ Part A 화면은 온톨로지/분석 계약 설계, 표본 비교, 추출 실행
 | GET /admin/kg-snapshots/{id} | 상태·버전·보고서 영향 조회 |
 | POST /research-jobs | Part B에서 승인 계약·ready snapshot·개별 brief로 보고서 생성 |
 
-관리 API는 Render 공개 데모에 등록하지 않습니다. 공개 보고서는 검토된 인용과 방법 요약만 제공하며 내부 프롬프트·비밀값은 노출하지 않습니다.
+관리 API는 `local_admin`에서만 등록하며 Render 공개 데모(향후)에는 등록하지 않습니다. 공개 보고서는 검토된 인용과 방법 요약만 제공하며 내부 프롬프트·비밀값은 노출하지 않습니다.
 
 ## 7. 개발 삭제·재작업·복구
 
 선택 범위 또는 프로젝트의 Part A 후보·승인 계약·추출·KG·snapshot을 개발 모드에서 삭제하고 재생성할 수 있습니다. 먼저 연결된 Part B 보고서·작업·공개 영향과 공유 노드 범위를 계산합니다. 관련 공개 보고서를 철회하고 A/B 작업을 중지한 뒤 자식부터 정리합니다. Crawler 원문과 삭제 범위 밖 공유 근거·소스 설정은 보존합니다.
 
-복구는 로컬 dump의 업무/체크포인트 스키마와 원문·검증 결과로 수행합니다. Aura 결과는 manifest와 대조해 재구축합니다. 정리 중 실패는 재개 가능해야 하고 삭제 완료 전에 자동 재생성을 시작하지 않습니다. 상세 잠금·checkpoint 삭제·공개 철회는 시퀀스와 백업 설계를 따릅니다.
+복구는 로컬 dump의 업무/체크포인트 스키마와 원문·검증 결과로 수행합니다. 그래프 테이블은 dump와 함께 복원되며 manifest와 대조해 불일치 시 재구축합니다. 정리 중 실패는 재개 가능해야 하고 삭제 완료 전에 자동 재생성을 시작하지 않습니다. 상세 잠금·checkpoint 삭제·공개 철회는 시퀀스와 백업 설계를 따릅니다.
 
 ## 8. 개발 순서와 통과 기준
 

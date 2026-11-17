@@ -6,11 +6,13 @@
 
 ## 1. 목적과 범위
 
-기사 단위 검색에서 한 걸음 나아가 “어떤 기관이 언제 무엇을 했으며, 어느 기사가 이를 뒷받침하는가?”를 확인할 수 있도록 합니다. 원문 저장은 Supabase PostgreSQL, 관계 탐색은 Neo4j가 담당하고 LangChain과 LangGraph를 이용해 추출·검증·재처리 흐름을 구성합니다.
+기사 단위 검색에서 한 걸음 나아가 “어떤 기관이 언제 무엇을 했으며, 어느 기사가 이를 뒷받침하는가?”를 확인할 수 있도록 합니다. 원문 저장과 지식그래프(노드·관계 테이블) 모두 로컬 PostgreSQL이 담당하고 LangChain과 LangGraph를 이용해 추출·검증·재처리 흐름을 구성합니다.
 
 최종 산출물은 **이슈 하나·분석 기간 하나에 대한 근거 기반 심층 리서치 보고서**입니다. KG·검색·타임라인은 보고서 작성과 검증을 지원합니다. MVP는 로컬 Agent가 보고서를 생성하고 관리자가 검토·공개한 뒤 PWA에서 열람·Markdown 다운로드하도록 합니다. PDF는 후속 확장입니다. 구성·생성 흐름·공개 기준은 [리서치 보고서 출력 설계](docs/report-output.md)를 기준으로 합니다.
 
-주요 사용자는 경제 뉴스를 조사하는 학습자와 리서치 담당자입니다. 포트폴리오는 공개 조회 데모를 우선 제공하고, 데이터 생성·관리자 조작은 개발자 로컬 환경에서 수행합니다.
+주요 사용자는 경제 뉴스를 조사하는 학습자와 리서치 담당자입니다. MVP는 개발자 로컬 환경의 본체(수집·Part A·Part B·관리자 조작)를 먼저 구현합니다. 포트폴리오용 공개 조회 데모는 **향후 구현**이며 `.env`를 `public_demo`로 설정하는 시점부터 착수합니다(2026-11-13 사용자 결정).
+
+**저장소 기준(2026-11-17 정리):** 정본(source of truth)은 **로컬 PostgreSQL**(원문·버전·작업 이력·체크포인트·지식그래프)과 로컬 파일 archive입니다. **별도 그래프 DB(Neo4j)는 MVP에서 쓰지 않습니다**(2026-11-17 결정, [그래프 저장 방침](#그래프-저장-방침-postgresql-테이블-2026-11-17-결정)). Supabase·Render는 공개 데모용 export 대상으로만 쓰며 MVP 범위가 아닙니다. 이 문서와 하위 문서에서 Supabase·Render를 언급하는 절은 별도 표기가 없어도 `public_demo`(향후) 설계 메모로 읽습니다. 하위 문서에 남은 Neo4j·Aura·Cypher 언급은 이 결정 이전의 설계이며, MVP에서는 PostgreSQL 그래프 테이블과 고정 SQL 조회로 읽습니다.
 
 대상 corpus는 네이버의 매일경제·서울경제·한국경제 **2년치 뉴스**를 후보로 검토합니다. 정확한 기간·섹션·실제 접근 가능성·전체 기사량은 표본으로 먼저 확인합니다. 임베딩은 선행 필수 기능이 아니라 **임베딩 없는 KG·보고서의 성과와 검색 누락을 측정한 뒤** 도입 여부를 결정합니다. 2년 전량의 무료 DB 적재는 보장하지 않으며 선별된 활성 분석 집합으로 MVP를 시작합니다. 저장 구조는 **로컬 본체(전량 원문·전체 파이프라인) / 공개 데모(선별 이슈·링크·요약·근거만)로 분리**하기로 확정했습니다(세부 항목은 미결). 수집량·용량·시간의 가정과 실험 단계, 분리안은 [corpus 타당성 검토](docs/corpus-feasibility.md)에 정리했습니다.
 
@@ -42,18 +44,18 @@
 
 | 단계 | 목적 | 함수 파이프라인 | 산출물·다음 단계 진입 조건 |
 |---|---|---|---|
-| 1. Crawler | 뉴스 원문 수집·정제·버전 저장 | 범위 검증 → 목록 수집 → 본문 파싱 → 정규화 → 버전 저장 | Supabase PostgreSQL 원문 버전·수집 이력 |
+| 1. Crawler | 뉴스 원문 수집·정제·버전 저장 | 범위 검증 → 목록 수집 → 본문 파싱 → 정규화 → 버전 저장 | 로컬 PostgreSQL 원문 버전·수집 이력 |
 | 2. Part A | LLM 기반 온톨로지 설계·KG 구축·검증 | 질문/분석 계약 → 온톨로지 후보·승인 → 기사 추출 → 근거 검증 → 정합화 → KG 적재 → manifest 확정 | 승인 분석 계약·온톨로지·검증된 KG·ready snapshot |
 | 3. Part B | Part A KG 기반 심층 보고서 작성 | 계약·snapshot·개별 질문 확인 → 근거 탐색·비교 → 분석 → 작성 → 인용 검증 → 검토·공개 | 근거 기반 심층 보고서·Markdown·실행 이력 |
 
-Part A는 **LLM을 활용해 온톨로지를 설계하고 실제 지식그래프까지 구축·검증**합니다. Part B는 그 지식 기반을 읽어 **심층 리서치 보고서**를 작성합니다. A→B 인계는 `analysis_contract_version`·`ontology_version`·`kg_snapshot_id`와 원문/근거 manifest로 고정합니다. KG snapshot은 Aura 물리 백업이 아니라 사용할 원문·주장·근거·적재 버전을 고정한 논리 manifest입니다. 상세 책임·함수·검증·재작업 설계는 [Part A 기획·설계](docs/part-a-planning.md)를 따릅니다.
+Part A는 **LLM을 활용해 온톨로지를 설계하고 실제 지식그래프까지 구축·검증**합니다. Part B는 그 지식 기반을 읽어 **심층 리서치 보고서**를 작성합니다. A→B 인계는 `analysis_contract_version`·`ontology_version`·`kg_snapshot_id`와 원문/근거 manifest로 고정합니다. KG snapshot은 그래프 DB 물리 백업이 아니라 사용할 원문·주장·근거·적재 버전을 고정한 논리 manifest입니다. 상세 책임·함수·검증·재작업 설계는 [Part A 기획·설계](docs/part-a-planning.md)를 따릅니다.
 
 Part A의 온톨로지/분석 계약은 재사용하고 새 기사는 승인 계약으로 KG에 추가합니다. Part B가 KG의 근거 부족이나 스키마 미지원을 발견하면 Part A에 보완 요청을 남기며 KG를 자동 수정하지 않습니다. 보완된 새 snapshot으로 Part B의 새 보고서 작업을 시작합니다. 온톨로지 승인·추출 주장 검토는 Part A에서, 보고서 승인·공개는 Part B에서 각각 관리합니다. 전문 에이전트의 문서 검토 작업은 개발 협업 방식이며 실행 앱의 전문가 검색·카탈로그·팀 편성 기능은 범위에 포함하지 않습니다.
 
 ```mermaid
 flowchart TD
     S[뉴스 수집 대상] --> C[크롤러: 목록·본문 수집]
-    C --> R[(Supabase PostgreSQL: 기사·원문 버전·작업 이력)]
+    C --> R[(로컬 PostgreSQL: 기사·원문 버전·작업 이력)]
     R --> PA[Part A: LLM 온톨로지·분석 계약 설계]
     PA --> O[승인된 온톨로지·분석 계약]
     R --> W[Part A: LangGraph KG 생성·검증 워크플로]
@@ -61,7 +63,7 @@ flowchart TD
     W --> L[LangChain: 구조화 추출]
     L --> V[타입·근거·수치·참조 검증]
     V --> H[정합화·필요시 사람 검토]
-    H --> N[(Neo4j AuraDB Free: 검증된 지식그래프)]
+    H --> N[(로컬 PostgreSQL 그래프 테이블: 검증된 지식그래프)]
     H --> R
     N --> KS[Part A: 검증된 KG snapshot·근거 manifest]
     KS --> RP[Part B: 근거 탐색·비교·보고서 작성 Agent]
@@ -74,7 +76,7 @@ flowchart TD
     A --> M[React PWA 관리자: Crawler·Part A·Part B]
 ```
 
-LangChain은 모델·도구 연결 및 구조화 추출에, LangGraph는 상태와 조건 분기·중단·재개 흐름에 사용합니다. LangGraph의 실행 그래프와 Neo4j에 저장하는 뉴스 지식그래프는 별도 구성 요소입니다. 역할 구분은 [LangChain 공식 개요](https://docs.langchain.com/oss/python/langchain/overview)와 [LangGraph 공식 개요](https://docs.langchain.com/oss/python/langgraph/overview)를 참고했습니다.
+LangChain은 모델·도구 연결 및 구조화 추출에, LangGraph는 상태와 조건 분기·중단·재개 흐름에 사용합니다. LangGraph의 실행 그래프와 PostgreSQL 그래프 테이블에 저장하는 뉴스 지식그래프는 별도 구성 요소입니다. 역할 구분은 [LangChain 공식 개요](https://docs.langchain.com/oss/python/langchain/overview)와 [LangGraph 공식 개요](https://docs.langchain.com/oss/python/langgraph/overview)를 참고했습니다.
 
 ## 3. 폴더 구조
 
@@ -104,10 +106,10 @@ NewsContext/
 │  ├─ config.py                    # 환경변수 로딩 및 설정 검증
 │  ├─ cli.py                       # 초기화·수집·추출·재처리 명령
 │  ├─ db/
-│  │  ├─ connection.py             # Supabase PostgreSQL 연결·트랜잭션
+│  │  ├─ connection.py             # PostgreSQL 연결·트랜잭션(local_admin: 로컬 DB)
 │  │  ├─ repositories.py           # 기사·버전·작업 저장 및 조회
 │  │  ├─ integrity.py              # FK 없는 논리 참조 검사·삭제 제한
-│  │  └─ migrations/               # 데이터 보존형 순차 마이그레이션
+│  │  └─ migrations/               # 데이터 보존형 순차 마이그레이션(그래프 노드·관계·membership 테이블 포함)
 │  ├─ crawler/
 │  │  ├─ client.py                 # 요청 간격·타임아웃·오류 처리
 │  │  ├─ naver.py                  # 목록·본문·발행 시각 파싱
@@ -137,10 +139,8 @@ NewsContext/
 │  │  ├─ graph.py                  # StateGraph 조립·분기·검토·재개
 │  │  └─ checkpoints.py            # 영속 체크포인트 설정
 │  ├─ graph/
-│  │  ├─ connection.py             # Neo4j 드라이버
-│  │  ├─ constraints.cypher        # 노드별 고유 제약
-│  │  ├─ writer.py                 # 멱등 적재·주장 상태 갱신
-│  │  └─ queries.py                # 매개변수 기반 조회 템플릿
+│  │  ├─ writer.py                 # PostgreSQL 그래프 테이블 멱등 적재·주장 상태 갱신
+│  │  └─ queries.py                # 매개변수 고정 SQL 조회(hop·행 수 상한, snapshot 필터)
 │  ├─ research/
 │  │  ├─ contracts.py              # 연구 질문·보고서·필드별 인용 계약
 │  │  ├─ tools.py                  # 기간·경로·기사·근거 조회 도구
@@ -177,7 +177,7 @@ NewsContext/
 └─ docs/
    ├─ backup-restore.md            # dump 백업·별도 보관·복원 검증 절차
    ├─ sequences.md                 # 대단위·하위 기능별 시퀀스 다이어그램
-   ├─ ci-cd.md                     # GitHub 형상관리·검증·Render 자동 배포
+   ├─ ci-cd.md                     # GitHub 형상관리·검증(Render 배포는 향후)
    ├─ part-a-planning.md            # LLM 온톨로지·KG 구축을 위한 Part A 설계
    ├─ report-output.md              # Part B 심층 보고서 출력·검토·공개 계약
    ├─ research-approach.md          # 여섯 연구 축·근거 수준·분석 범위
@@ -199,23 +199,23 @@ NewsContext/
 | 언어·환경 | Python, uv, pyproject.toml | 기존 Python 참조 코드 활용 및 의존성 고정 |
 | 설정 | pydantic-settings, python-dotenv | 환경변수 타입 검증, 개발 설정 분리 |
 | 뉴스 수집 | requests, BeautifulSoup4 | 기존 크롤러의 HTTP·HTML 파싱 구조 활용 |
-| 관계형 저장 | Supabase Free PostgreSQL, psycopg 3 | 기사·버전·작업 상태를 트랜잭션으로 관리 |
+| 관계형 저장 | 로컬 PostgreSQL(정본), psycopg 3 / 공개 데모(향후): Supabase Free | 기사·버전·작업 상태를 트랜잭션으로 관리 |
 | 스키마 변경 | 버전 SQL 마이그레이션 | 기존 데이터를 유지하며 스키마 변경 |
 | 추출 계약 | Pydantic | LLM 출력과 검증 오류를 구조화 |
 | LLM 연동 | LangChain, 선택 공급자 연동 패키지 | 구조화 출력과 모델 교체 지원 |
-| 후속 검색 실험 | LangChain embedding adapter, Supabase pgvector | 임베딩 없는 성과·실패 분석 후 필요 시에만 구현·비교·선택 활성화 |
+| 후속 검색 실험 | LangChain embedding adapter, PostgreSQL pgvector | 임베딩 없는 성과·실패 분석 후 필요 시에만 구현·비교·선택 활성화 |
 | 실행 흐름 | LangGraph | 상태 기반 분기·검토 대기·재개 |
-| 체크포인트 | langgraph-checkpoint-postgres, psycopg 3 | Supabase PostgreSQL에 실행 상태 영속 저장·중단/재시작 복구 |
-| 그래프 저장 | Neo4j AuraDB Free(공개 데모), Neo4j Community(로컬 본체), neo4j Python 드라이버, neo4j-graphrag-python(도입 결정·미설치) | 기관·사건·주장·근거 탐색. 로컬/공개 분리는 corpus-feasibility §8, 채택 조건은 source-audit §3-1 |
+| 체크포인트 | langgraph-checkpoint-postgres, psycopg 3 | 로컬 PostgreSQL에 실행 상태 영속 저장·중단/재시작 복구 |
+| 그래프 저장 | 로컬 PostgreSQL 그래프 테이블(노드·관계·snapshot membership), 고정 SQL 조회. Neo4j·neo4j-graphrag-python은 보류(2026-11-17) | 기관·사건·주장·근거 탐색. 재도입 조건은 [그래프 저장 방침](#그래프-저장-방침-postgresql-테이블-2026-11-17-결정) |
 | API | FastAPI, Uvicorn | 수집·검색·검토 기능의 공통 인터페이스 |
 | 화면 | React, TypeScript, Vite, React Router | 반응형 사용자·관리자 화면과 경로 분리 |
 | PWA | vite-plugin-pwa, Web App Manifest, Service Worker | 설치·정적 파일 캐시·업데이트 안내 |
 | 프런트엔드 환경·검증 | Node.js, npm, Vitest, Playwright | 의존성 고정·화면 검사·브라우저 시나리오 검증 |
 | 검증 | pytest, Ruff | 핵심 데이터 계약·복구 시나리오·정적 검사 |
-| 개발 인프라 | Supabase 콘솔, PostgreSQL 클라이언트 도구, Neo4j Aura 콘솔, Git | 외부 Supabase Free·AuraDB Free, dump·복원 및 변경 이력 관리 |
+| 개발 인프라 | 로컬 PostgreSQL(구동 방식 미정, Docker는 승인 필요), PostgreSQL 클라이언트 도구, Git | dump·복원 및 변경 이력 관리. Supabase 콘솔은 공개 데모(향후)에서만 사용 |
 | 운영 기록 | Python logging, 실행별 지표 저장 | 실패 단계·토큰·비용·지연 추적 |
 
-Python은 3.11 이상을 초기 후보로 두고 전체 의존성 호환성을 확인한 뒤 버전을 고정합니다. Node.js는 선택한 Vite 버전이 지원하는 LTS를 검증해 고정합니다. LLM은 공급자 연결 계층으로 분리합니다. 화면은 React PWA로 구현하며 Streamlit은 사용하지 않습니다. 기본 검색은 Supabase의 조건·키워드 및 Neo4j 관계 탐색이며, 사용자 변경 지시에 따라 **필요한 구간의 임베딩을 조건부 허용**합니다. 별도 벡터 서버보다 기존 Supabase의 pgvector를 우선 사용하고 품질·용량 검증 후 기능별 활성화합니다. [임베딩 설계](docs/embedding-retrieval.md)
+Python은 3.11 이상을 초기 후보로 두고 전체 의존성 호환성을 확인한 뒤 버전을 고정합니다. Node.js는 선택한 Vite 버전이 지원하는 LTS를 검증해 고정합니다. LLM은 공급자 연결 계층으로 분리합니다. 화면은 React PWA로 구현하며 Streamlit은 사용하지 않습니다. 기본 검색은 PostgreSQL의 조건·키워드 및 그래프 테이블의 제한된 관계 탐색이며, 사용자 변경 지시에 따라 **필요한 구간의 임베딩을 조건부 허용**합니다. 별도 벡터 서버보다 기존 PostgreSQL의 pgvector를 우선 사용하고 품질·용량 검증 후 기능별 활성화합니다. [임베딩 설계](docs/embedding-retrieval.md)
 
 ### 논문·GitHub 참조 구현 방침
 
@@ -223,7 +223,28 @@ Part A는 **LLMs4OL의 과제 분해 + CQ4OE의 CQ coverage + EDC의 추출/정�
 
 참조할 파일·함수, 적용/변형/보류 범위, 원본 과제와 우리 평가의 차이, 라이선스·의존성, 1~11주 학습 순서를 [참조 구현 계획](docs/reference-implementation-plan.md)과 [소스 감사](docs/source-audit.md)에 정의했습니다. AutoSchemaKG의 잘못된 arXiv 링크와 Text2KGBench 저장소도 교정했습니다. 외부 repo 전체를 제품 의존성에 추가하거나 원 논문의 성능을 우리 성능으로 기재하지 않습니다.
 
-필요 환경변수는 `DATABASE_URL`, `DATABASE_BACKUP_URL`, `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `LLM_PROVIDER` 및 공급자별 모델·API 키입니다. 참조 코드의 개발용 기본 계정은 복사하지 않고 비밀값은 Git에서 제외합니다.
+#### 환경변수 목록 (단일 기준표, 2026-11-17 정리)
+
+환경변수 이름은 **이 표 하나를 기준**으로 하고, 다른 문서는 이 표를 링크합니다. 이름을 바꾸면 이 표와 `.env.example`을 함께 고칩니다. 아직 `config.py`가 없으므로 모두 구현할 설정 계약이며, 표시가 없는 변수명도 구현 전까지는 잠정입니다.
+
+| 변수 | `local_admin` | `public_demo`(향후) | 비고 |
+|---|---|---|---|
+| `APP_MODE` | `local_admin` | `public_demo` | 프로필 선택. 유일한 프로필 변수이며 `APP_ENV`는 쓰지 않음 |
+| `DATABASE_URL` | 필수: 로컬 PostgreSQL | 필수: Supabase 읽기 전용 역할 | |
+| `DATABASE_BACKUP_URL` | 선택: dump 전용 접속(비우면 `DATABASE_URL`) | 사용 안 함 | |
+| `BACKUP_DIR` | 필수: dump 1차 보관 경로 | 사용 안 함 | [backup-restore](docs/backup-restore.md) |
+| `BACKUP_COPY_DIR` | 필수: 별도 장치 사본 경로 | 사용 안 함 | 위치는 미정(corpus §8.3) |
+| `BACKUP_STATE_DIR` | 필수: 마지막 정상 백업·실패 기록 경로 | 사용 안 함 | |
+| `BACKUP_RETENTION_DAYS` | 선택: 기본 14 | 사용 안 함 | |
+| `ARCHIVE_DIR` | 필수: 로컬 원문 파일 archive 경로 | 사용 안 함 | 이름 잠정, archive 형식 미정(corpus §8.3) |
+| `LLM_PROVIDER` 및 공급자별 `*_MODEL`·`*_API_KEY`·`*_BASE_URL` | 필수(아래 표) | 주입하지 않음 | |
+| `ADMIN_API_TOKEN` | 필수 | 주입하지 않음 | 관리자 로그인 비교값 |
+| `EMBEDDING_ENABLED` | 선택: 기본 `false` | 사용 안 함 | [임베딩 설계](docs/embedding-retrieval.md) |
+| `EMBEDDING_DIMENSIONS` | `EMBEDDING_ENABLED=true`일 때 필수 | 사용 안 함 | |
+| `PUBLIC_DEMO_PROJECT_ID` | 사용 안 함(export 단계 설정은 YAML) | 필수 | [CI/CD](docs/ci-cd.md) |
+| `PORT` | 사용 안 함 | Render가 주입 | |
+
+참조 코드의 개발용 기본 계정은 복사하지 않고 비밀값은 Git에서 제외합니다.
 
 `LLM_PROVIDER`는 `openai`, `anthropic`, `deepseek`, `ollama` 중 하나를 선택하며 기본값은 `openai`입니다. 공통 `LLM_MODEL` 대신 아래 공급자별 변수를 사용합니다. 모델 식별자는 사용자 지정 초기값이며 실제 가용성과 구조화 출력 지원은 통합 단계에서 검증합니다.
 
@@ -236,51 +257,51 @@ Part A는 **LLMs4OL의 과제 분해 + CQ4OE의 CQ coverage + EDC의 추출/정�
 
 설정 로더는 선택한 공급자에 필요한 항목만 검증하고, 알 수 없는 공급자·빈 모델·필수 인증 누락은 실행 전에 오류로 처리합니다. Ollama는 구독 API 키 사용이 전제라 빈 API 키를 허용하지 않습니다(로컬 Ollama는 지원 대상 아님). 구독 모델의 요청 한도·이용 조건과 구조화 출력 지원은 통합 단계에서 확인합니다. 선택하지 않은 공급자로 자동 전환하지 않으며 처리 이력에는 실제 사용한 공급자·모델·접속 대상을 비밀값 없이 기록합니다.
 
-설정 예시는 [.env.example](.env.example)에 정리했습니다. Supabase DB 접속 문자열과 선택한 LLM 공급자·모델·API 키를 입력해야 합니다. 기존 `.env`가 있으면 필요한 키만 병합하고, 새 환경에서만 예시 파일을 `.env`로 복사합니다. 수집 정책과 재시도·비용 예산은 YAML 설정으로 관리하며 환경변수에는 해당 경로를 지정합니다. 현재 환경변수는 구현할 설정 계약으로, `config.py`와 시작 코드 연결 전에는 자동 적용되지 않습니다.
+설정 예시는 [.env.example](.env.example)에 정리했습니다. `local_admin` 기준으로 로컬 PostgreSQL 접속값과 선택한 LLM 공급자·모델·API 키를 입력해야 합니다. 기존 `.env`가 있으면 필요한 키만 병합하고, 새 환경에서만 예시 파일을 `.env`로 복사합니다. 수집 정책과 재시도·비용 예산은 YAML 설정으로 관리하며 환경변수에는 해당 경로를 지정합니다. 현재 환경변수는 구현할 설정 계약으로, `config.py`와 시작 코드 연결 전에는 자동 적용되지 않습니다.
 
-**환경 프로필 초안 (2026-11-13, 미구현·변수명 잠정):** `APP_MODE`로 프로필을 고르고 선택한 프로필에 필요한 항목만 검증합니다. 위의 Supabase·Aura 항목은 `public_demo` 기준이며, **공개 데모는 향후 구현(로컬 본체 우선, 2026-11-13 결정)**입니다. `.env`를 `public_demo`로 설정하는 시점부터 그 프로필과 export 단계를 구현하고, 그 전에는 `local_admin`만 구현·검증합니다.
+**환경 프로필 초안 (2026-11-13, 미구현·변수명 잠정):** `APP_MODE`로 프로필을 고르고 선택한 프로필에 필요한 항목만 검증합니다. Supabase·Render 관련 항목은 `public_demo` 기준이며, **공개 데모는 향후 구현(로컬 본체 우선, 2026-11-13 결정)**입니다. `.env`를 `public_demo`로 설정하는 시점부터 그 프로필과 export 단계를 구현하고, 그 전에는 `local_admin`만 구현·검증합니다.
 
 | 항목 | `local_admin`(로컬 본체) | `public_demo`(Render) |
 |---|---|---|
 | 관계형 DB | 로컬 PostgreSQL 접속 문자열 | Supabase 읽기 전용 접속 문자열 |
-| 그래프 DB | 로컬 Neo4j Community URI·계정(`bolt://localhost`) | Aura 조회용 자격 증명(`neo4j+s://`) |
 | LLM 키·관리자 토큰 | 필요 | 주입하지 않음 |
 | 공개 DB 쓰기 자격 증명 | export 단계에서만 사용, 일반 Worker에는 주지 않음 | 없음 |
 | archive 경로 | 로컬 파일 archive 경로 | 없음 |
 
-로컬 전용 변수와 export 대상 접속값은 `public_demo` 환경에 복사하지 않으며, `.env.example`을 그대로 배포 설정으로 쓰지 않습니다. 공개용 export 단계의 허용 필드·사전 검사·상한값은 [corpus-feasibility §8.2](docs/corpus-feasibility.md)에 정의하고, 상한값은 설정 파일(YAML)로 관리합니다. 정확한 변수명은 `config.py` 구현 때 확정합니다.
+로컬 전용 변수와 export 대상 접속값은 `public_demo` 환경에 복사하지 않으며, `.env.example`을 그대로 배포 설정으로 쓰지 않습니다. 공개용 export 단계의 허용 필드·사전 검사·상한값은 [corpus-feasibility §8.2](docs/corpus-feasibility.md)에 정의하고, 상한값은 설정 파일(YAML)로 관리합니다. 변수명은 위 환경변수 목록을 따르며, `config.py` 구현 중 바꾸면 그 표부터 고칩니다.
 
-### Supabase Free 및 dump 백업 방침
+### PostgreSQL 및 dump 백업 방침
 
-관계형 저장소는 **Supabase Free의 PostgreSQL**로 확정합니다. 앱·Worker는 psycopg 3로 연결하고 기존 MariaDB SQL은 PostgreSQL 문법·자료형으로 변환합니다. 업무 테이블은 `newscontext` 스키마에 모으고 FK 없이 PK·고유 인덱스·일반 인덱스만 생성합니다. Supabase 관리 스키마의 기존 제약은 변경하지 않습니다. PWA는 FastAPI만 호출하고 DB 접속 정보는 서버에서만 사용합니다. Supabase Auth·Storage·Realtime·Data API는 현재 필수 구성에 포함하지 않으며 업무 스키마를 Data API에 노출하지 않습니다.
+관계형 저장소의 정본은 **로컬 PostgreSQL**입니다(로컬 본체 우선, 2026-11-13 결정). Supabase Free PostgreSQL은 공개 데모(향후)의 export 대상으로만 쓰며 MVP에서 접속하지 않습니다. 로컬 PostgreSQL의 버전·구동 방식(설치형 또는 Docker, Docker는 사용자 승인 필요)과 사용할 확장(pg_trgm·pg_bigm 가용성)은 구현 전 확인합니다. 앱·Worker는 psycopg 3로 연결하고 기존 MariaDB SQL은 PostgreSQL 문법·자료형으로 변환합니다. 업무 테이블은 `newscontext` 스키마에 모으고 FK 없이 PK·고유 인덱스·일반 인덱스만 생성합니다. PWA는 FastAPI만 호출하고 DB 접속 정보는 서버에서만 사용합니다.
 
-Supabase Connect 화면의 실제 접속 문자열을 사용합니다. 지속 실행 서버·Worker는 직접 연결 또는 네트워크에 맞는 session pooler를 선택하고, dump·마이그레이션은 직접 연결이나 session pooler를 사용합니다. 백업에 transaction pooler를 사용하지 않습니다. TLS를 사용하고 인증서 검증 설정은 배포 환경에서 확인합니다. [공식 접속 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)
+**공개 데모(향후) 메모:** Supabase에 적재할 때는 Supabase 관리 스키마의 기존 제약을 변경하지 않고, Auth·Storage·Realtime·Data API를 쓰지 않으며 업무 스키마를 Data API에 노출하지 않습니다. Supabase Connect 화면의 실제 접속 문자열을 사용합니다. 지속 실행 서버·Worker는 직접 연결 또는 네트워크에 맞는 session pooler를 선택하고, dump·마이그레이션은 직접 연결이나 session pooler를 사용합니다. 백업에 transaction pooler를 사용하지 않습니다. TLS를 사용하고 인증서 검증 설정은 배포 환경에서 확인합니다. [공식 접속 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)
 
-**Free 운영 백업은 직접 정기적으로 dump 파일을 만들어 별도 보관하는 방식**으로 구성합니다. 플랫폼의 자동 백업·복구 기능에 의존하지 않습니다. 일 1회(Asia/Seoul 03:00)를 초기 정책으로 두고 Windows 작업 스케줄러 또는 서버 스케줄러가 백업 스크립트를 실행하도록 구현합니다. 개발용 삭제·재생성이나 스키마 변경 전에는 추가 dump를 만듭니다. 현재 문서는 정책만 정의하며 실제 스케줄 등록은 하지 않습니다. [Free 백업 권고](https://supabase.com/docs/guides/platform/backups)
+**Free 운영 백업은 직접 정기적으로 dump 파일을 만들어 별도 보관하는 방식**으로 구성합니다. 플랫폼의 자동 백업·복구 기능에 의존하지 않습니다. 일 1회(Asia/Seoul 03:00)를 초기 정책으로 두고 Windows 작업 스케줄러 또는 서버 스케줄러가 백업 스크립트를 실행하도록 구현합니다. 개발용 삭제·재생성이나 스키마 변경 전에는 추가 dump를 만듭니다. 현재 문서는 정책만 정의하며 실제 스케줄 등록은 하지 않습니다. MVP의 dump 대상은 로컬 PostgreSQL입니다. 공개 데모(향후)의 Supabase DB는 로컬 정본에서 다시 export할 수 있으므로 별도 백업 대상으로 두지 않습니다.
 
-기본 경로는 PostgreSQL `pg_dump`의 custom format으로 `newscontext`와 `langgraph` 스키마의 구조·데이터·시퀀스를 한 snapshot에 저장하고 `pg_restore`로 복원하는 방식입니다. 관리 스키마·역할·서버 설정·Supabase 프로젝트 전체를 복제하는 백업으로 간주하지 않습니다. 사용한 확장·외부 의존성·권한 설정은 마이그레이션과 운영 문서로 관리하고 복원 대상에 준비합니다. Supabase 프로젝트 전체 이전이 필요하면 관리 스키마를 고려한 [공식 CLI 백업·복원 절차](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore)를 별도로 적용합니다.
+기본 경로는 PostgreSQL `pg_dump`의 custom format으로 `newscontext`와 `langgraph` 스키마의 구조·데이터·시퀀스를 한 snapshot에 저장하고 `pg_restore`로 복원하는 방식입니다. 역할·서버 설정·클러스터 전체를 복제하는 백업으로 간주하지 않습니다. 사용한 확장·외부 의존성·권한 설정은 마이그레이션과 운영 문서로 관리하고 복원 대상에 준비합니다. 지식그래프 테이블은 `newscontext` 스키마에 있으므로 이 dump에 함께 포함됩니다. 로컬 파일 archive는 포함되지 않으며, 그 백업은 [백업·복원 계획](docs/backup-restore.md)에서 다룹니다(현재 미설계).
 
 파일은 `newscontext_YYYYMMDD_HHMMSS.dump`로 구분하고 서버 시간대가 달라도 파일명·기록 시간대가 명확하도록 합니다. 완료 전에는 임시 파일로 저장한 뒤 성공 시 최종 이름으로 변경합니다. 실행 로그·SHA-256·파일 크기·스키마/코드 버전·도구 버전·접속 대상 식별자를 기록하고 비밀번호는 명령줄·로그에 노출하지 않습니다. 도구는 서버 버전과 호환되는 PostgreSQL 클라이언트를 고정합니다.
 
-성공 dump는 `BACKUP_DIR`에 보관하고 별도 장치 또는 별도 저장소에 추가 복사합니다. 이 프로젝트의 Supabase DB 안에만 저장하지 않습니다. 보존 기간 초기값은 14일이며 새 dump 생성과 별도 사본 확인 후 오래된 파일을 정리하고 마지막 정상 사본은 유지합니다. 저장소는 접근 제한·암호화를 적용하고 Git·PWA 배포물에서 제외합니다. 별도 사본의 경로와 스케줄러 실행 권한은 배포 시 확정합니다.
+성공 dump는 `BACKUP_DIR`에 보관하고 별도 장치(`BACKUP_COPY_DIR`)에 추가 복사합니다. 로컬 PC 한 대의 디스크에만 두지 않습니다. 보존 기간 초기값은 14일이며 새 dump 생성과 별도 사본 확인 후 오래된 파일을 정리하고 마지막 정상 사본은 유지합니다. 저장소는 접근 제한·암호화를 적용하고 Git·PWA 배포물에서 제외합니다. 별도 사본의 경로와 스케줄러 실행 권한은 배포 시 확정합니다.
 
-월 1회 및 백업 절차 변경 시 격리된 PostgreSQL 검증 환경에서 `pg_restore`를 수행해 테이블·행 수·인덱스·논리 참조와 Crawler/Part A 조회 및 체크포인트 재개를 검사합니다. 운영 DB를 대상으로 자동 덮어쓰기 복원하지 않습니다. 백업 실패·별도 복사 실패·복원 검증 실패는 운영 화면에 기록합니다. 일 1회 정책은 마지막 정상 dump 이후 변경분을 잃을 수 있으므로 중요한 개발 변경 전 추가 백업을 사용합니다. PostgreSQL 체크포인트는 dump에 포함하고 AuraDB는 별도 대상으로 둡니다. KG는 보존된 원문·추출 결과로 재구축합니다.
+월 1회 및 백업 절차 변경 시 격리된 PostgreSQL 검증 환경에서 `pg_restore`를 수행해 테이블·행 수·인덱스·논리 참조와 Crawler/Part A 조회 및 체크포인트 재개를 검사합니다. 운영 DB를 대상으로 자동 덮어쓰기 복원하지 않습니다. 백업 실패·별도 복사 실패·복원 검증 실패는 운영 화면에 기록합니다. 일 1회 정책은 마지막 정상 dump 이후 변경분을 잃을 수 있으므로 중요한 개발 변경 전 추가 백업을 사용합니다. PostgreSQL 체크포인트와 지식그래프 테이블은 같은 dump에 포함되어 한 시점으로 복원됩니다. KG는 보존된 원문·추출 결과로도 재구축할 수 있습니다.
 
 백업 함수 흐름은 `load_backup_config → verify_target → dump_database → verify_archive → copy_backup → record_success → prune_old_backups`로 구성합니다. `verify_archive`의 목록 확인·해시 검사는 실제 복원 검증을 대체하지 않습니다. 상세 운영 절차는 [백업·복원 계획](docs/backup-restore.md)에 정리합니다.
 
-### Neo4j AuraDB Free 사용 방침
+### 그래프 저장 방침 (PostgreSQL 테이블, 2026-11-17 결정)
 
-2026-11-13 확정된 **로컬 본체 / 공개 데모 분리**([상세](docs/corpus-feasibility.md))에 따라 그래프 저장소는 두 곳입니다. **공개 데모는 Neo4j Aura의 AuraDB Free**(선별 이슈 2~3개분, 상시 가용), **로컬 본체는 Neo4j Community**(확대 시 전량 데이터, PC 가동 중에만 가용)를 사용하며 같은 코드가 `.env` 연결 문자열 교체만으로 동작해야 합니다. 로컬 DB 구동 방식(Docker Compose 등)은 새 의존성이므로 설치 전 사용자 승인을 받습니다. 공개 노출 원문 범위·로컬 archive 형식·공개 DB 적재 상한·archive 사본 위치는 **미결정**(§8.3)이며 이 절의 Aura 설명은 공개 데모 기준입니다. 공개 데모는 로컬 서버에 의존하지 않으며 공개용 export 단계가 선별 적재합니다. Aura 콘솔에서 인스턴스를 생성하고 발급된 URI·사용자·비밀번호를 서버 `.env`의 `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`에 입력합니다. `NEO4J_DATABASE`는 `neo4j`를 사용하되 발급 정보와 확인합니다.
+지식그래프 모델(엔티티·관계·주장·근거·snapshot)은 유지하되, **저장은 로컬 PostgreSQL `newscontext` 스키마의 그래프 테이블**로 합니다. 별도 그래프 DB(Neo4j Community·AuraDB)는 MVP에서 쓰지 않습니다. 근거: MVP 조회는 hop·행 수 상한이 있는 1~2 hop 탐색이고, 그래프는 PostgreSQL 정본에서 재구축 가능한 파생 데이터이므로 두 저장소 간 이중 쓰기·정합성 대조·별도 백업 비용을 들일 이유가 아직 없습니다.
 
-접속 URI는 콘솔이 제공한 `neo4j+s://...databases.neo4j.io`를 그대로 사용하며, Python 드라이버에서 TLS 인증서 검증을 유지합니다. 접속 경로는 **PWA → FastAPI/Worker → AuraDB Free**이며 PWA에서 DB로 직접 연결하거나 자격 증명을 전달하지 않습니다. 초기화 CLI는 Aura 인스턴스를 생성하는 대신 연결 확인과 Cypher 고유 제약·인덱스 생성을 수행합니다. [공식 접속 안내](https://neo4j.com/docs/aura/getting-started/connect-instance/)
-
-2026-11-13 확인한 공식 Free 한도는 노드 200,000개·관계 400,000개·저장 공간 1GB·인스턴스당 DB 1개입니다. 실험마다 DB를 새로 만드는 대신 `project_id`·실행 ID·스키마 버전으로 데이터를 구분하고, 고유 ID·조회·삭제 범위에도 프로젝트를 반영합니다. Document·Claim·Evidence까지 포함한 전체 노드·관계 수를 집계하고 적재 전 배치 규모를 확인합니다. 한도 접근 또는 서버의 용량 오류 시 작업을 보류하고 개발용 정리 후 재개합니다. [공식 한도](https://neo4j.com/docs/aura/quotas-and-limits/)
-
-Supabase PostgreSQL 원문·버전·승인 온톨로지·검증된 추출 결과를 기준으로 그래프를 재구축할 수 있도록 적재 입력을 보존합니다. Aura 연결 불가 시 상태를 오류로 표시하고 제한된 재시도 후 복구 대상으로 남기며 공개 데모가 로컬 DB로 자동 전환하지 않으며 로컬↔공개 전환은 명시적 환경 설정으로만 합니다. 개발 초기화도 Aura 전체 삭제 대신 선택 프로젝트·버전의 데이터만 정리합니다. 실제 Aura 인스턴스 생성과 접속 검증은 아직 수행하지 않았습니다.
+- **테이블(설계안):** 노드 테이블(엔티티·사건·주장·근거 등 `node_type`, 정규 ID, 속성 JSONB, 유효 기간), 관계 테이블(`src_id`, `dst_id`, `rel_type`, 근거 ID, 유효 기간, 상태), snapshot membership 테이블(`kg_snapshot_id` ↔ 노드·관계 ID). 다른 테이블과 마찬가지로 FK 없이 프로그램에서 논리 참조를 검사하고, 고유 제약·조회 인덱스는 SQL 마이그레이션으로 만듭니다.
+- **조회:** `graph/queries.py`의 매개변수 고정 SQL(조인 또는 깊이 상한을 둔 재귀 CTE)만 사용하며 hop 수·행 수 상한과 `kg_snapshot_id` 필터를 항상 적용합니다. 공개 사용자 입력으로 SQL을 조립하지 않습니다. Part B와 LangGraph 노드는 SQL을 직접 쓰지 않고 그래프 도구 함수(예: 이웃 조회, 경로 조회, 주장·근거 조회)를 호출하므로 저장소를 바꿔도 호출부는 유지됩니다.
+- **적재:** 검증된 추출 결과를 같은 PostgreSQL 트랜잭션 안에서 멱등 upsert합니다. 원문·작업 상태와 그래프가 한 DB에 있으므로 부분 실패 시 롤백되고, 백업도 같은 dump에 포함됩니다.
+- **분석:** Community Detection 등 그래프 알고리즘이 필요하면 snapshot 범위 부분 그래프를 PostgreSQL에서 읽어 Python(예: networkx)으로 계산하고 결과를 다시 테이블에 저장합니다. 새 라이브러리 도입은 사용 시점에 승인을 받습니다.
+- **Neo4j 재도입 조건:** 다음 중 하나가 측정으로 확인될 때만 PostgreSQL을 정본으로 둔 채 Neo4j를 파생 조회 저장소로 추가합니다. (a) [기술 스택 분석](docs/tech-stack-analysis.md)의 핵심 그래프 질의가 SQL로 지나치게 복잡하거나 목표 응답 시간을 넘는 경우, (b) G4의 ToG식 탐색처럼 3 hop 이상 가변 경로 탐색이 필요해진 경우. 이때 neo4j-graphrag-python 채택 여부도 함께 다시 판단합니다(현재 보류).
+- **공개 데모(향후):** 그래프 테이블도 export 대상에 포함해 Supabase PostgreSQL 한 곳에 선별 적재합니다. AuraDB는 사용하지 않습니다.
 
 ## 5. 데이터 설계
 
-### Supabase PostgreSQL
+### PostgreSQL (로컬 정본)
 
 | 테이블 | 주요 필드·키 | 역할 |
 |---|---|---|
@@ -303,7 +324,7 @@ Supabase PostgreSQL 원문·버전·승인 온톨로지·검증된 추출 결과
 | text_chunks / text_embeddings | source_type, source_version_id, chunk_hash, offset, profile_version, vector, status | 조건부 검색 후보, 원문·snapshot 논리 참조; pgvector 명시적 마이그레이션 |
 | search_index_manifests | search_index_manifest_id, kg_snapshot_id 또는 승인 스키마 범위, profile_version, manifest_hash, status | KG와 별도인 검색 파생물 버전; 재색인 시 새 버전 생성 |
 
-Supabase PostgreSQL는 **FK(FOREIGN KEY)를 생성하지 않고 PK·UNIQUE INDEX·일반 INDEX로 구성**합니다. 테이블 간 ID는 논리 참조 컬럼으로 유지하며, 참조 무결성과 삭제·변경 제한은 프로그램 로직이 담당합니다. DB의 FK·ON DELETE CASCADE·ON UPDATE CASCADE는 사용하지 않습니다.
+PostgreSQL은 **FK(FOREIGN KEY)를 생성하지 않고 PK·UNIQUE INDEX·일반 INDEX로 구성**합니다. 테이블 간 ID는 논리 참조 컬럼으로 유지하며, 참조 무결성과 삭제·변경 제한은 프로그램 로직이 담당합니다. DB의 FK·ON DELETE CASCADE·ON UPDATE CASCADE는 사용하지 않습니다.
 
 위 계약의 `ontology_version`은 기존 추출 저장 모델의 `schema_version`과 같은 온톨로지 버전을 가리킵니다. `analysis_contract_version`은 별도 분석 계약 버전이며 두 값을 혼용하지 않습니다. 최종 물리 컬럼명은 마이그레이션 설계에서 통일합니다. snapshot 항목은 프로젝트·상태·버전 소속을 같은 트랜잭션에서 검사하고 `(kg_snapshot_id, item_type, item_version_id)` 고유 인덱스를 둡니다. report→snapshot→근거 논리 참조도 프로그램에서 검증합니다.
 
@@ -333,7 +354,7 @@ Claim ─ABOUT→ Event ─ACTOR→ Entity
 
 | 노드 | 주요 속성 | 규칙 |
 |---|---|---|
-| Document | source_id, version_id, content_hash, published_at | Supabase PostgreSQL 원문 버전과 연결 |
+| Document | source_id, version_id, content_hash, published_at | 로컬 PostgreSQL 원문 버전과 연결 |
 | Entity | entity_id, type, canonical_name, aliases | 기업·기관·업종·기사에 언급된 지수 등 대상 |
 | Event | event_id, kind, event_time_start/end, time_precision | 경제 사건·발표·계획·시장 반응 보도를 구별 |
 | Issue | issue_id, topic, scope | 기사/사건을 연결하는 이슈; 자동 인과 단정 금지 |
@@ -410,7 +431,7 @@ Part B: validate_report_brief → load_ready_snapshot → retrieve_evidence
 
 | 순서·기능 | 구현 내용 | 주요 산출물 | 완료 기준 |
 |---|---|---|---|
-| F01 개발 환경 | 패키지·Supabase Free·AuraDB Free 접속·로그 구성 | pyproject.toml, scripts/, .env.example | Supabase·Aura 연결 및 설정 누락 오류 확인 |
+| F01 개발 환경 | 패키지·로컬 PostgreSQL 접속(그래프 테이블 포함)·로그 구성(`APP_MODE=local_admin`) | pyproject.toml, scripts/, .env.example | 로컬 DB 연결·그래프 테이블 마이그레이션 및 설정 누락 오류 확인. Supabase 접속은 공개 데모(향후) 범위 |
 | F02 DB 생성 | FK 없이 PK·인덱스 구성, 논리 참조 검사·잠금·삭제 제한 구현 | db/, integrity.py, migrations/ | 데이터 보존, FK 미생성, 잘못된 참조·삭제 거부, 동시 쓰기 경합 검증 |
 | F03 뉴스 수집 | 목록→URL 정규화→본문·발행 시각 파싱→저장 | crawler/, 수집 CLI | 고정 HTML 파싱 통과, 지정 범위 수집 결과·오류 집계 |
 | F04 중복·수정 처리 | 기사 키와 본문 해시 비교, 변경 시 새 원문 버전 생성 | 버전 저장·재수집 로직 | 동일 입력 재수집은 버전 불변, 본문 변경은 새 버전 생성 |
@@ -448,9 +469,9 @@ load_version → filter_topic → split_text → extract → validate
 
 상태에는 `job_id`, 원문 버전, 후보, 검증 오류, 스키마·프롬프트·모델 버전, 재시도 횟수, 사용 토큰, 경과시간을 둡니다. 일시 오류 재시도와 의미 수정 재호출은 별도로 집계하고 최대 횟수·총 토큰·총 시간을 제한합니다. 승인 시 후보 해시를 저장하고 후보가 변경되면 재검토합니다.
 
-영속 checkpointer와 동일 실행 식별자로 재개합니다. 체크포인트는 외부 DB의 원자성을 보장하지 않으므로 Neo4j 쓰기는 멱등하게 구성합니다. 그래프 반영 후 Supabase PostgreSQL 완료 표시 전에 실패하면 같은 작업을 재실행해 상태를 맞춥니다. 정정 시 이전 주장은 `superseded` 또는 `retracted`로 관리하고 일반 조회에서 제외합니다.
+영속 checkpointer와 동일 실행 식별자로 재개합니다. 그래프 테이블 반영과 작업 완료 표시는 같은 PostgreSQL 트랜잭션으로 묶고, 재실행에 대비해 그래프 쓰기는 멱등 upsert로 구성합니다. 트랜잭션이 실패하면 롤백 후 같은 작업을 재실행합니다. 정정 시 이전 주장은 `superseded` 또는 `retracted`로 관리하고 일반 조회에서 제외합니다.
 
-체크포인트는 로컬 실행까지 포함해 **Supabase PostgreSQL의 `langgraph` 스키마**로 통일합니다. `langgraph-checkpoint-postgres`의 `PostgresSaver`를 사용하고 비동기 경로에는 `AsyncPostgresSaver`를 적용합니다. 라이브러리 연결의 search_path를 전용 스키마로 고정하고 초기화 단계에서 `setup()`을 실행하도록 설계합니다. 설치 버전의 실제 테이블·인덱스·FK 미생성 및 스키마 적용을 통합 검사로 확인합니다. 직접 psycopg 연결을 생성할 때 필요한 autocommit·row factory 설정도 해당 버전에 맞춰 검증합니다. 연결은 직접 연결 또는 session pooler를 사용하며 체크포인트 상태에 DB 연결 객체를 저장하지 않습니다. [공식 영속성 안내](https://docs.langchain.com/oss/python/langgraph/persistence)
+체크포인트는 **로컬 PostgreSQL의 `langgraph` 스키마**로 통일합니다. 공개 데모(향후)는 Worker를 실행하지 않으므로 체크포인트를 쓰지 않습니다. `langgraph-checkpoint-postgres`의 `PostgresSaver`를 사용하고 비동기 경로에는 `AsyncPostgresSaver`를 적용합니다. 라이브러리 연결의 search_path를 전용 스키마로 고정하고 초기화 단계에서 `setup()`을 실행하도록 설계합니다. 설치 버전의 실제 테이블·인덱스·FK 미생성 및 스키마 적용을 통합 검사로 확인합니다. 직접 psycopg 연결을 생성할 때 필요한 autocommit·row factory 설정도 해당 버전에 맞춰 검증합니다. 연결은 직접 연결 또는 session pooler를 사용하며 체크포인트 상태에 DB 연결 객체를 저장하지 않습니다. [공식 영속성 안내](https://docs.langchain.com/oss/python/langgraph/persistence)
 
 원문과 작업 테이블이 같은 PostgreSQL에 있어도 체크포인트 저장과 업무 저장은 서로 다른 트랜잭션일 수 있으므로 자동 원자성을 가정하지 않습니다. thread_id와 작업 ID의 대응을 보존하고 재시작 후 승인 대기·실패 지점에서 재개합니다. 실행 중·검토 대기 체크포인트는 유지하고 완료 작업은 보존 정책에 따라 정리합니다. SQLite·Render 파일시스템은 영속 저장소로 사용하지 않습니다.
 
@@ -472,13 +493,13 @@ load_version → filter_topic → split_text → extract → validate
 | `POST /research-jobs` | Part B 브리프·ready snapshot 기반 보고서 생성 | 보고서 실행 |
 | `GET /reports`, `GET /reports/{id}`, `GET /reports/{id}/markdown` | 공개된 보고서·고정 버전·다운로드 | 공개 보고서 |
 
-표의 경로는 `/api` 접두사를 생략한 계약 초안입니다. 공개 API의 목록·기사·근거 조회도 demo 프로젝트에서 공개된 보고서/snapshot에 연결된 범위만 반환하고 내부 원문 전문·초안은 노출하지 않습니다. 관리·생성·변경 API는 Render에 등록하지 않습니다.
+표의 경로는 `/api` 접두사를 생략한 계약 초안입니다. 공개 API의 목록·기사·근거 조회도 demo 프로젝트에서 공개된 보고서/snapshot에 연결된 범위만 반환하고 내부 원문 전문·초안은 노출하지 않습니다. 관리·생성·변경 API는 `public_demo`(Render, 향후)에 등록하지 않습니다.
 
-수집·추출은 요청 안에서 끝까지 실행하지 않고 Supabase PostgreSQL 작업 큐를 로컬 단일 Worker가 처리합니다. 작업 선점·실행 lease·만료 복구를 구현하여 재시작 후에도 미완료 작업을 찾을 수 있도록 합니다. 사용자 조회는 Render에서 공개하고 관리자 API·실행·검토·삭제는 로컬에서만 활성화합니다. 관리자 인증은 MVP에 포함하고 원격 관리·다중 사용자 역할은 후속 단계로 둡니다.
+수집·추출은 요청 안에서 끝까지 실행하지 않고 로컬 PostgreSQL 작업 큐를 로컬 단일 Worker가 처리합니다. 작업 선점·실행 lease·만료 복구를 구현하여 재시작 후에도 미완료 작업을 찾을 수 있도록 합니다. MVP에서는 사용자 조회와 관리자 API·실행·검토·삭제 모두 로컬에서 동작하고, 공개 조회(Render)는 공개 데모(향후) 범위입니다. 관리자 인증은 MVP에 포함하고 원격 관리·다중 사용자 역할은 후속 단계로 둡니다.
 
 ### 관리자 화면 구성
 
-Part B 메뉴는 **리서치 보고서**를 중심으로 구성합니다. 개별 brief(질문·대상·기간·정보 기준 시점·분석 모드)와 Part A의 승인 분석 계약·온톨로지·ready snapshot을 지정하여 생성합니다. 문장별 근거·상충 보도·검증 오류를 검토한 뒤 공개하고 재작성은 새 초안 버전으로 처리합니다. Render는 공개 보고서 열람·해당 버전 다운로드만 제공합니다.
+Part B 메뉴는 **리서치 보고서**를 중심으로 구성합니다. 개별 brief(질문·대상·기간·정보 기준 시점·분석 모드)와 Part A의 승인 분석 계약·온톨로지·ready snapshot을 지정하여 생성합니다. 문장별 근거·상충 보도·검증 오류를 검토한 뒤 공개하고 재작성은 새 초안 버전으로 처리합니다. 공개 데모(Render, 향후)는 공개 보고서 열람·해당 버전 다운로드만 제공합니다.
 
 사용자·관리자 화면은 하나의 React PWA로 제공합니다. `/`는 사용자 조회, `/admin` 아래는 관리자 기능으로 나눕니다. 모바일은 단일 패널·카드 중심, 데스크톱은 표와 원문/후보 비교 패널을 사용하고, 긴 표·스키마 편집은 작은 화면에서도 접근할 수 있도록 구성합니다.
 
@@ -498,9 +519,9 @@ Crawler 원문은 유지하고 재사용합니다. 초기화 시 질문·표본�
 
 Part B 참조가 없는 Part A 데이터는 사용 중 작업을 확인한 뒤 삭제할 수 있습니다. Part B가 참조하면 보고서 버전·인용·작업·checkpoint·snapshot·KG 영향 범위를 표시하고 관련 공개 보고서를 먼저 철회합니다. 연결 결과를 함께 정리하는 초기화 경로를 제공하고 고아 참조를 남기지 않습니다. 다른 프로젝트/snapshot의 공유 Entity·Event·근거는 보존하며 고립된 전용 노드만 정리합니다. 프로젝트 잠금·작업 종료·실행 토큰으로 초기화 중 새 참조와 이전 Worker의 늦은 완료 쓰기를 차단합니다.
 
-초기화는 `APP_ENV=development`에서 관리자 인증 후 실행하며 운영 모드에서는 API에서도 거부합니다. `POST /admin/part-a/reset-preview`는 삭제 범위·참조 관계를 계산하고, `POST /admin/part-a/reset`은 명시된 대상·연결 Part B 포함 여부·재생성 옵션으로 실행합니다. 미리보기와 실행 사이 대상이 바뀌면 재계산을 요구합니다. 관리자 조작·초기화 작업 이력은 삭제 범위에서 제외합니다.
+초기화는 `APP_MODE=local_admin`에서 관리자 인증 후 실행하며 `public_demo`에서는 라우트를 등록하지 않습니다. `POST /admin/part-a/reset-preview`는 삭제 범위·참조 관계를 계산하고, `POST /admin/part-a/reset`은 명시된 대상·연결 Part B 포함 여부·재생성 옵션으로 실행합니다. 미리보기와 실행 사이 대상이 바뀌면 재계산을 요구합니다. 관리자 조작·초기화 작업 이력은 삭제 범위에서 제외합니다.
 
-함수 흐름은 `plan_part_a_reset → lock_reset_scope → stop_and_wait_jobs → delete_linked_part_b → delete_part_a_data → verify_reset → enqueue_part_a_rebuild`로 구성합니다. 연결 Part B가 없으면 해당 삭제 단계는 건너뜁니다. Supabase PostgreSQL에는 FK가 없으므로 자식→부모 순서를 프로그램에서 제어하고, Neo4j와의 부분 실패는 초기화 작업 단계 이력을 이용해 재실행합니다. 전체 삭제와 검증이 성공하기 전에는 재생성을 시작하지 않습니다. 초기화가 완료될 때까지 대상 범위는 일반 조회·실행에서 제외합니다.
+함수 흐름은 `plan_part_a_reset → lock_reset_scope → stop_and_wait_jobs → delete_linked_part_b → delete_part_a_data → verify_reset → enqueue_part_a_rebuild`로 구성합니다. 연결 Part B가 없으면 해당 삭제 단계는 건너뜁니다. PostgreSQL에는 FK가 없으므로 자식→부모 순서(그래프 테이블 포함)를 프로그램에서 제어하고, 부분 실패는 초기화 작업 단계 이력을 이용해 재실행합니다. 전체 삭제와 검증이 성공하기 전에는 재생성을 시작하지 않습니다. 초기화가 완료될 때까지 대상 범위는 일반 조회·실행에서 제외합니다.
 
 완료 기준은 선택/전체 초기화, 승인 버전 삭제, 원문 보존, 연결 Part B 정리, 공유 그래프 보존, 삭제 중 실패 후 재개, 운영 모드 차단, 같은 입력을 이용한 재생성입니다.
 
@@ -522,19 +543,21 @@ Part B 참조가 없는 Part A 데이터는 사용 중 작업을 확인한 뒤 �
 
 로컬 단일 관리자 MVP는 관리자 화면에서 입력한 토큰을 `POST /auth/login`으로 전송해 서버의 `ADMIN_API_TOKEN`과 비교한 뒤, 서버 측 만료 가능한 세션을 생성하는 방식으로 구성합니다. 브라우저는 HttpOnly·SameSite 세션 쿠키를 사용하고 HTTPS 배포 시 Secure를 적용합니다. 변경 API에는 CSRF 토큰·Origin 검증을 적용합니다. 원본 관리자 토큰은 프런트엔드 빌드·localStorage·캐시·로그에 저장하지 않습니다. `POST /auth/logout`은 세션을 폐기하고 화면의 관리자 조회 상태도 비웁니다. 미설정·불일치·세션 만료 시 관리 API는 거부합니다. 다중 사용자 환경에서는 인증 의존성을 개인별 인증·역할로 전환합니다.
 
-관리자 조작은 `admin_actions` 테이블에 작업 ID·행위·대상 버전·변경 전후 상태·사유·시각·결과를 기록합니다. 단일 토큰 방식의 행위자는 공유 관리자 식별자로 기록하며 개인별 추적은 다중 사용자 인증 단계에서 제공합니다. 작업 변경과 감사 기록은 같은 Supabase PostgreSQL 트랜잭션으로 처리합니다. 검토 결정은 별도 검토 이력과 연결합니다.
+관리자 조작은 `admin_actions` 테이블에 작업 ID·행위·대상 버전·변경 전후 상태·사유·시각·결과를 기록합니다. 단일 토큰 방식의 행위자는 공유 관리자 식별자로 기록하며 개인별 추적은 다중 사용자 인증 단계에서 제공합니다. 작업 변경과 감사 기록은 같은 PostgreSQL 트랜잭션으로 처리합니다. 검토 결정은 별도 검토 이력과 연결합니다.
 
 완료 기준에는 미인증 변경 차단, 중복 실행 요청의 중복 작업 방지, 중지·완료 경합 처리, 실패 재시도, 승인 대상 해시 검증, 비밀값 비노출, 관리자 조작 이력 보존을 포함합니다. DB 전체 초기화·스키마 변경은 CLI 운영 절차로 유지하고, 범위가 정해진 개발용 Part A 삭제·재생성은 관리자 화면에서 제공합니다.
 
 ### PWA 구현 범위와 배포
 
-**공개 조회 데모 우선**으로 배포합니다. GitHub는 소스·빌드 이력을 관리하고 Render Free Web Service에서 React 빌드 정적 파일과 FastAPI 조회 API를 같은 origin으로 제공합니다. Crawler·Part A·Part B Worker는 개발자 PC에서만 실행하고 Supabase Free·AuraDB Free에 결과를 저장합니다. Render에서는 사전 생성한 데모 프로젝트의 허용된 기사·사건·근거만 조회합니다.
+**로컬 본체를 먼저 구현합니다**(2026-11-13 결정). MVP의 PWA·FastAPI·Crawler·Part A·Part B Worker는 개발자 PC에서 `local_admin`으로 실행하고 결과(지식그래프 포함)를 로컬 PostgreSQL에 저장합니다. GitHub는 소스·빌드 이력을 관리합니다.
 
-환경별 `APP_MODE`는 `local_admin` 또는 `public_demo`로 구분합니다. Render의 `public_demo`에서는 관리자·인증·작업 등록·승인·삭제 라우트를 등록하지 않고 API에서도 읽기 전용 DB 역할·데모 프로젝트 범위를 적용합니다. Aura도 지원 권한 범위 내 최소 권한으로 접속하고 공개 API는 고정 읽기 쿼리만 제공합니다. `public_demo`에는 LLM 키·관리자 토큰·백업 및 체크포인트 쓰기 자격 증명을 주입하지 않습니다. 공개 사용자 입력으로 Cypher·SQL을 실행하지 않습니다.
+**공개 데모(향후) 메모:** `.env`를 `public_demo`로 설정하는 시점부터 구현합니다. Render Free Web Service에서 React 빌드 정적 파일과 FastAPI 조회 API를 같은 origin으로 제공하고, export 단계가 로컬 정본에서 선별한 데모 프로젝트의 허용된 기사·사건·근거와 해당 그래프 테이블 행을 Supabase Free에 적재하며 Render는 그 범위만 조회합니다. 아래 Render·Supabase 설명은 이 향후 범위에 해당합니다.
 
-로컬 관리자와 Worker는 `local_admin`으로 실행하고 쓰기·LLM·체크포인트 권한을 사용합니다. Worker는 PC가 켜져 있고 프로세스가 실행 중일 때만 처리하며 PC 종료 전 체크포인트를 저장하고 종료합니다. 공개 조회는 로컬 PC의 실행 여부와 독립적으로 동작합니다. Render 재시작 시 마이그레이션·checkpointer setup·Worker 실행·dump를 자동 시작하지 않습니다.
+환경별 `APP_MODE`는 `local_admin` 또는 `public_demo`로 구분합니다. Render의 `public_demo`에서는 관리자·인증·작업 등록·승인·삭제 라우트를 등록하지 않고 API에서도 읽기 전용 DB 역할·데모 프로젝트 범위를 적용합니다. 공개 API는 고정 읽기 쿼리만 제공합니다. `public_demo`에는 LLM 키·관리자 토큰·백업 및 체크포인트 쓰기 자격 증명을 주입하지 않습니다. 공개 사용자 입력으로 SQL을 실행하지 않습니다.
 
-Render Free의 휴면 후 첫 응답 지연은 재연결 안내로 처리하고 로컬 SQLite·세션 파일·dump에 의존하지 않습니다. dump는 **로컬 Windows 작업 스케줄러가 Supabase에 접속하여 생성**하고 로컬 영속 경로와 별도 저장소에 보관합니다. PC 종료로 누락된 예약은 다음 실행 가능 시 보완하며, 마지막 정상 백업 시각과 실패를 확인합니다. [Render 무료 서비스 제한](https://render.com/docs/free)
+로컬 관리자와 Worker는 `local_admin`으로 실행하고 쓰기·LLM·체크포인트 권한을 사용합니다. Worker는 PC가 켜져 있고 프로세스가 실행 중일 때만 처리하며 PC 종료 전 체크포인트를 저장하고 종료합니다. 공개 데모(향후)의 조회는 로컬 PC의 실행 여부와 독립적으로 동작합니다. Render 재시작 시 마이그레이션·checkpointer setup·Worker 실행·dump를 자동 시작하지 않습니다.
+
+공개 데모(향후)에서 Render Free의 휴면 후 첫 응답 지연은 재연결 안내로 처리하고 로컬 SQLite·세션 파일·dump에 의존하지 않습니다. dump는 **로컬 Windows 작업 스케줄러가 로컬 PostgreSQL(정본)에서 생성**하고 `BACKUP_DIR`과 별도 위치(`BACKUP_COPY_DIR`)에 보관합니다. PC 종료로 누락된 예약은 다음 실행 가능 시 보완하며, 마지막 정상 백업 시각과 실패를 확인합니다. [Render 무료 서비스 제한](https://render.com/docs/free)
 
 Web App Manifest에 앱 이름·아이콘·시작 경로·표시 모드를 정의하고 Service Worker는 정적 앱 파일만 캐시합니다. `/api` 요청과 인증·관리자 데이터는 캐시하지 않으며, API 응답은 `Cache-Control: no-store`를 적용합니다. 오프라인에서는 안내 화면을 표시하고 실행·승인·삭제·재생성을 비활성화합니다. 변경 요청의 오프라인 큐나 자동 재전송은 구현하지 않습니다.
 
@@ -552,7 +575,7 @@ Service Worker 새 버전은 업데이트 가능 안내 후 사용자가 적용�
 
 GitHub Actions는 PR과 `main` push에서 Python 정적 검사·핵심 테스트·React 타입 검사·화면 테스트·PWA 빌드를 실행합니다. 외부 DB·LLM 자격 증명 없이 fixture와 테스트 대역으로 검증하고, 별도 격리 환경의 통합 검증 결과를 추가로 관리합니다. 필수 검사가 누락·실패하면 성공으로 처리하지 않습니다.
 
-Render는 GitHub의 `main` 브랜치를 연결하고 **After CI Checks Pass**로 자동 배포합니다. GitHub Actions가 검증하고 Render가 해당 커밋을 빌드·배포하는 단일 경로로 구성하며 deploy hook으로 중복 배포하지 않습니다. `public_demo`에서 PWA와 읽기 전용 API를 배포하고 Worker·백업·DB 마이그레이션은 자동 배포에 포함하지 않습니다. 배포 설정·검증·복구 계획은 [CI/CD 문서](docs/ci-cd.md)에 정리합니다.
+MVP 단계에서는 GitHub Actions 검증까지만 구성하고 자동 배포는 하지 않습니다. 공개 데모(향후)에서는 Render가 GitHub의 `main` 브랜치를 연결하고 **After CI Checks Pass**로 자동 배포합니다. GitHub Actions가 검증하고 Render가 해당 커밋을 빌드·배포하는 단일 경로로 구성하며 deploy hook으로 중복 배포하지 않습니다. `public_demo`에서 PWA와 읽기 전용 API를 배포하고 Worker·백업·DB 마이그레이션은 자동 배포에 포함하지 않습니다. 배포 설정·검증·복구 계획은 [CI/CD 문서](docs/ci-cd.md)에 정리합니다.
 
 ## 7. 개발 순서와 예상 일정
 
@@ -610,7 +633,7 @@ TP·FP·FN과 판정 규칙을 함께 기록하며 분모가 0인 precision/reca
 | [LangChain 공식 문서](https://docs.langchain.com/oss/python/langchain/overview) | 모델·도구·에이전트 구성 역할 | 구조화 추출 계층 설계 참고 |
 | [LangGraph 공식 문서](https://docs.langchain.com/oss/python/langgraph/overview) | 상태·노드·분기·영속 실행 역할 | 처리 워크플로와 검토·재개 설계 참고 |
 
-참조 폴더의 학습 예제를 운영 검증이 끝난 구현으로 간주하지 않습니다. 이 기획서는 참조 자료를 바탕으로 작성한 신규 설계이며, DB 생성·뉴스 수집·LLM 호출·Neo4j 적재는 아직 실행하지 않았습니다.
+참조 폴더의 학습 예제를 운영 검증이 끝난 구현으로 간주하지 않습니다. 이 기획서는 참조 자료를 바탕으로 작성한 신규 설계이며, DB 생성·뉴스 수집·LLM 호출·그래프 적재는 아직 실행하지 않았습니다.
 
 ## 라이선스
 

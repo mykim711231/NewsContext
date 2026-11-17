@@ -19,7 +19,7 @@
 | [OntoExtend 저자 저장소](https://github.com/dersuchendee/OntoExtend) | README의 OntoExtend Script/rag-ontoextend.py, embedder.py, llm_service.py; 검색→fragment→통합 | README Apache-2.0 선언. sentence embedding·FAISS 기반 원형과 pgvector adapter 변형 구분; 실제 복사 전 LICENSE/NOTICE 확인 |
 | [Text2KGBench run_eval.py](https://github.com/cenguix/Text2KGBench/blob/main/src/evaluation/run_eval.py) | calculate_precision_recall_f1, get_subject_object_hallucinations, get_ontology_conformance, normalize_triple | 코드 Apache-2.0 확인. 데이터 README badge/본문의 CC BY vs ShareAlike 문구 상충은 별도 확인 필요 |
 
-Text2KGBench의 해당 conformance 함수는 관계 라벨 membership 검사이며 전체 domain/range 논리 검증이 아닙니다. 영어 PorterStemmer·문자열 기반 환각 검사를 한국어 원문 의미 지지 검사로 대체하지 않습니다. CQ4OE의 OWL 공리·HermiT 평가도 Neo4j property graph의 JSON schema 검증과 동일하지 않습니다.
+Text2KGBench의 해당 conformance 함수는 관계 라벨 membership 검사이며 전체 domain/range 논리 검증이 아닙니다. 영어 PorterStemmer·문자열 기반 환각 검사를 한국어 원문 의미 지지 검사로 대체하지 않습니다. CQ4OE의 OWL 공리·HermiT 평가도 PostgreSQL 그래프 테이블의 JSON schema 검증과 동일하지 않습니다.
 
 ## 2. Part B 및 교차 적용 소스
 
@@ -32,7 +32,7 @@ Text2KGBench의 해당 conformance 함수는 관계 라벨 membership 검사이�
 | [GraphRAG community reports](https://github.com/microsoft/graphrag/blob/main/packages/graphrag/graphrag/index/workflows/create_community_reports.py) | run_workflow/create_community_reports·context build·summarize_communities | MIT. 확인 당시 packages 모노레포·README maintenance mode; 변경 이력 고정 필요 |
 | [GraphRAG global search](https://github.com/microsoft/graphrag/blob/main/packages/graphrag/graphrag/query/structured_search/global_search/search.py) | GlobalSearch.search·_map_response_single_batch·_reduce_response | community report map/reduce 자체는 vector 검색 필수가 아님 |
 | [GraphRAG local mixed context](https://github.com/microsoft/graphrag/blob/main/packages/graphrag/graphrag/query/structured_search/local_search/mixed_context.py) | LocalSearchMixedContext는 entity_text_embeddings·text_embedder 입력 사용 | 원본 local search를 embedding 없이 그대로 사용한다고 쓰지 않음 |
-| [ToG freebase_func.py](https://github.com/DataArcTech/ToG/blob/main/ToG/freebase_func.py) | relation_search_prune/entity_search/entity_score/entity_prune/reasoning/generate_answer; width/depth 제한 | README Apache-2.0 선언, 독립 LICENSE 본문 미확인. 원 SPARQL은 snapshot 제한 Cypher로 교체 |
+| [ToG freebase_func.py](https://github.com/DataArcTech/ToG/blob/main/ToG/freebase_func.py) | relation_search_prune/entity_search/entity_score/entity_prune/reasoning/generate_answer; width/depth 제한 | README Apache-2.0 선언, 독립 LICENSE 본문 미확인. 원 SPARQL은 snapshot 제한 고정 SQL 그래프 도구로 교체 |
 | [Tigramite pcmci.py](https://github.com/jakobrunge/tigramite/blob/master/tigramite/pcmci.py) · causal_effects.py | PCMCI.run_pcmci/run_pcmciplus; CausalEffects | GPL-3.0. 숫자 시계열·가정 필요, 현재 runtime 제외 |
 | [MIRAI api_implementation.py](https://github.com/yecchen/MIRAI/blob/master/APIs/api_implementation.py) | Date/DateRange/set_default_end_date/count_events/get_events; get_embedding·BM25·embedding 파일 | root LICENSE 미확인·README research purposes only. langchain0.2.3/openai0.27.4 등 원 requirements 그대로 병합하지 않음 |
 
@@ -46,11 +46,11 @@ ToG pruning은 LLM/BM25/sentencebert 선택이 가능하지만 원 파일은 sen
 
 ## 3-1. 추가 필요 후보 (2026-11-13 웹 검색 확인)
 
-기존 감사는 Part A/B 논문 구현 중심이어서 한국어 처리·본문 추출·그래프 라이브러리·로컬 Neo4j 제약이 비어 있었습니다. 아래는 **검색 결과 요약만 확인**한 후보이며 저장소·LICENSE 파일을 직접 읽거나 설치·실행하지 않았습니다. 도입 전 §4 체크포인트를 따릅니다.
+기존 감사는 Part A/B 논문 구현 중심이어서 한국어 처리·본문 추출·그래프 라이브러리·로컬 그래프 저장 제약이 비어 있었습니다. 아래는 **검색 결과 요약만 확인**한 후보이며 저장소·LICENSE 파일을 직접 읽거나 설치·실행하지 않았습니다. 도입 전 §4 체크포인트를 따릅니다.
 
 | 후보 | 필요한 이유 | 확인된 것 / 미확인 |
 |---|---|---|
-| [neo4j-graphrag-python](https://github.com/neo4j/neo4j-graphrag-python) | 공식 Neo4j GraphRAG 패키지. retriever·KG 적재 구현 참조 | PyPI 메타데이터 Apache-2.0, Python 3.10~3.14. 버전은 자료마다 1.14.1·1.18.0로 상충해 설치 시 확인. **2026-11-13 사용자 결정: 도입(의존성 채택)으로 정함.** 설치·동작은 아직 미검증이므로 첫 통합 때 `uv.lock`으로 버전을 고정하고, Neo4j Community·AuraDB 양쪽 연결, pydantic·langchain 버전 충돌, 자체 계약(snapshot·근거 수준)과의 맞물림을 확인함. 계약과 맞지 않는 부분은 라이브러리를 감싸 쓰고 계약을 바꾸지 않음 |
+| [neo4j-graphrag-python](https://github.com/neo4j/neo4j-graphrag-python) | 공식 Neo4j GraphRAG 패키지. retriever·KG 적재 구현 참조 | PyPI 메타데이터 Apache-2.0, Python 3.10~3.14. 버전은 자료마다 1.14.1·1.18.0로 상충해 설치 시 확인. **2026-11-13 도입 결정 → 2026-11-17 Neo4j 제외로 보류.** 아래 확인 항목은 Neo4j 재도입 시(README 그래프 저장 방침 조건 a·b) 적용합니다. 설치·동작은 아직 미검증이므로 첫 통합 때 `uv.lock`으로 버전을 고정하고, Neo4j Community·AuraDB 양쪽 연결, pydantic·langchain 버전 충돌, 자체 계약(snapshot·근거 수준)과의 맞물림을 확인함. 계약과 맞지 않는 부분은 라이브러리를 감싸 쓰고 계약을 바꾸지 않음 |
 | [trafilatura](https://github.com/adbar/trafilatura) | requests+BS4 파서와 비교할 본문 추출기 후보 | 1.8.0 이후 Apache-2.0(이전은 GPLv3+). 한국어 뉴스 성능 근거는 못 찾음 → 출처별 고정 HTML로 직접 비교 |
 | [kiwipiepy](https://github.com/bab2min/kiwipiepy) | 한국어 형태소·문장 분리(검색 보조·offset 검증·중복 판정 전처리) | 2026-11-13 확인: 저장소 LICENSE는 Apache-2.0, PyPI 0.24.1의 `license_expression`도 Apache-2.0, README는 모델 파일도 같은 라이선스라고 명시. 0.23.2 이하는 LGPL이므로 0.24 이상만 사용. NOTICE 확인: 모델 파일도 Apache-2.0, `kiwipiepy_model` 0.24.0 PyPI도 Apache-2.0, 모델은 사전·n-gram 통계이며 원 말뭉치를 복원할 수 없다고 명시. 재배포 시 NOTICE의 저작권·라이선스 고지 유지 의무(Eigen MPL-2.0 등 제3자 구성요소 포함). 미확인: 학습 말뭉치(세종·모두의 말뭉치) 제공처 조건이 Apache-2.0 배포를 허용하는지는 NOTICE가 밝히지 않음. 2026-11-13 검색으로도 약관 원문을 찾지 못함(모두의 말뭉치는 온라인 약정서 승인 방식, 목적은 연구·기술 개발로 보도됨, 상업적 이용·모델 재배포 허용 여부는 근거 없음). 약관 원문 또는 국립국어원 문의로만 확정 가능 → 이 프로젝트는 Kiwi를 사용만 하고 모델·말뭉치를 재배포하지 않으며, 상업 서비스화 시 재확인 |
 | [KLUE](https://github.com/KLUE-benchmark/KLUE) | 한국어 NER·관계추출 일반 벤치마크 | 금융 뉴스 이슈·반응 추출용이 아니고 이벤트 과제 없음. 사전 점검용 참조에 한정 |
@@ -60,8 +60,8 @@ ToG pruning은 LLM/BM25/sentencebert 선택이 가능하지만 원 파일은 sen
 | [datasketch](https://github.com/ekzhu/datasketch) | 전재·근접 중복 기사 판정(MinHash-LSH) | 2026-11-13 확인: 저장소 LICENSE와 PyPI 2.0.0(Python ≥3.9) 모두 MIT. 뉴스 근접 중복 정의 예: trigram Jaccard ≥ 0.8 |
 | [text-dedup](https://github.com/ChenghaoMou/text-dedup) | 중복 제거 방법 비교 참조 | NEWS-COPY 벤치마크에서 MinHash 결과 보고. 의존성 규모·라이선스 직접 확인 전에는 방법 참조에 한정 |
 | Gaoya | Rust 기반 MinHash LSH | MIT로 보고됨. Rust 빌드 의존성이 생기므로 MVP에서는 제외 |
-| pg_bigm / pg_trgm / mecab-ko+textsearch_ko | PostgreSQL 한국어 검색 | 기본 FTS는 한국어 미지원. pg_trgm은 내장 3-gram, pg_bigm은 2-gram으로 조사 붙은 어절에 유리(AWS 한국어 블로그), mecab-ko는 네이티브 컴파일 필요. **Supabase pg_bigm: 사용자 프로젝트에서 `pg_available_extensions` 조회 결과 0행(2026-11-13) → 사용 불가로 확정.** 공식 문서에 pg_trgm·PGroonga는 있음(PGroonga의 한국어 지원은 미확인). 실제 프로젝트에서 `select * from pg_available_extensions where name = 'pg_bigm';`로 확인 |
-| Neo4j Community 제약 | 로컬 그래프 저장소 | 공식 문서 기준 사용자 DB 1개, dump는 오프라인 전용. 설치·동작 검증은 하지 않음 |
+| pg_bigm / pg_trgm / mecab-ko+textsearch_ko | PostgreSQL 한국어 검색 | 기본 FTS는 한국어 미지원. pg_trgm은 내장 3-gram, pg_bigm은 2-gram으로 조사 붙은 어절에 유리(AWS 한국어 블로그), mecab-ko는 네이티브 컴파일 필요. **Supabase pg_bigm: 사용자 프로젝트에서 `pg_available_extensions` 조회 결과 0행(2026-11-13) → Supabase(공개 데모·향후)에서는 사용 불가.** 정본인 로컬 PostgreSQL에서의 pg_bigm·pg_trgm 가용성은 아직 확인하지 않았으며 구현 전 확인합니다. 공식 문서에 pg_trgm·PGroonga는 있음(PGroonga의 한국어 지원은 미확인). 실제 프로젝트에서 `select * from pg_available_extensions where name = 'pg_bigm';`로 확인 |
+| Neo4j Community 제약 | (보류) 재도입 시 로컬 그래프 저장소 후보 | 공식 문서 기준 사용자 DB 1개, dump는 오프라인 전용. 설치·동작 검증은 하지 않음 |
 
 **확인하지 못한 것:** 한국 금융 뉴스의 NER·관계·이벤트를 함께 다루는 공개 데이터셋은 찾지 못했습니다. 한국어 추출 성능은 자체 20~40건 평가셋으로만 판단하며 외부 점수로 대신하지 않습니다. 중복 판정 후보는 위 표에 두었으나 어느 것도 채택하지 않았고, 임계값은 자체 평가셋으로 정합니다. kiwipiepy는 저장소 LICENSE·PyPI·README로 Apache-2.0을 확인했으나 datasketch도 저장소 LICENSE·PyPI로 MIT를 확인했습니다.
 

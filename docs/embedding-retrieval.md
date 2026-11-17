@@ -12,15 +12,15 @@
 | Part A 개체/관계 정합화 | 별칭·표현이 다른 mention의 top-k 후보 생성 | 자동 병합 금지; ID·타입·시간·원문 근거 재검증 |
 | Part B 보고서 | 질문과 관련된 고정 snapshot 내 기사 chunk·주장·요약 검색 | cutoff·프로젝트·원문/주장 버전·snapshot membership 필터 적용 |
 
-기본 경로는 키워드·별칭·Cypher이며 검색 누락이 확인된 경우 의미 검색과 결합해 비교합니다. 임베딩은 판단의 근거를 대신하지 않고 검색 후보를 찾는 보조 정보입니다. KG를 변경하거나 시장 인과효과를 추정하는 기능이 아닙니다.
+기본 경로는 키워드·별칭·고정 SQL 그래프 조회이며 검색 누락이 확인된 경우 의미 검색과 결합해 비교합니다. 임베딩은 판단의 근거를 대신하지 않고 검색 후보를 찾는 보조 정보입니다. KG를 변경하거나 시장 인과효과를 추정하는 기능이 아닙니다.
 
 ## 2. 저장소와 패키지
 
-우선 **기존 Supabase PostgreSQL의 pgvector**를 사용해 별도 벡터 서버의 운영을 피합니다. vector extension을 준비하고 업무 스키마의 embedding 테이블을 명시적 SQL 마이그레이션으로 생성합니다. 기본 PK·인덱스와 프로그램 논리 참조 원칙을 유지합니다. [Supabase pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
+우선 **정본인 로컬 PostgreSQL의 pgvector**를 사용해 별도 벡터 서버의 운영을 피합니다(로컬 설치본의 pgvector 가용성은 구현 전 확인. Supabase는 공개 데모·향후). vector extension을 준비하고 업무 스키마의 embedding 테이블을 명시적 SQL 마이그레이션으로 생성합니다. 기본 PK·인덱스와 프로그램 논리 참조 원칙을 유지합니다. [Supabase pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
 
 LangChain embedding interface와 선택 공급자 adapter로 벡터를 생성하고 psycopg 저장·조회 함수 또는 custom retriever/tool로 연결합니다. `langchain-postgres`의 편의 vectorstore는 자동 생성 테이블·FK·마이그레이션·버전 필터가 프로젝트 원칙에 맞는지 확인하기 전 바로 도입하지 않습니다. [LangChain PGVector](https://docs.langchain.com/oss/python/integrations/vectorstores/pgvector), [Embedding integrations](https://docs.langchain.com/oss/python/integrations/embeddings)
 
-FAISS 등 원 연구 구현의 저장소는 격리 원형 실험에서 비교할 수 있으나 제품 기본 구성과 섞지 않습니다. 대형 embedding 모델은 로컬 작업 환경에서만 실행하고 Render 공개 조회 이미지에 모델 가중치를 포함하지 않습니다.
+FAISS 등 원 연구 구현의 저장소는 격리 원형 실험에서 비교할 수 있으나 제품 기본 구성과 섞지 않습니다. 대형 embedding 모델은 로컬 작업 환경에서만 실행하고 Render 공개 조회 이미지(향후)에 모델 가중치를 포함하지 않습니다.
 
 ## 3. 모델과 버전 계약
 
@@ -36,7 +36,7 @@ KG manifest와 검색 인덱스 manifest는 분리합니다. Part A의 `kg_snaps
 
 ```text
 질문·승인 계약·snapshot 검증
- → 구조화 필터·키워드/별칭·Cypher 후보
+ → 구조화 필터·키워드/별칭·그래프 테이블 조회 후보
  → embedding 활성 시 질문 벡터·동일 profile 검색 (허용 ID·시간 조건 DB 사전 필터)
  → snapshot/cutoff/프로젝트 소속 재검증
  → 중복 제거·순위 결합 → 원문/Claim/Evidence 재조회
@@ -49,7 +49,7 @@ public_demo는 사전 생성한 보고서 조회만 하므로 방문자 요청�
 
 ## 5. 용량·백업·재색인
 
-원문·checkpoint와 같은 Free DB 공간을 사용합니다. 예를 들어 float32 1,536차원×10,000 chunk의 벡터 payload만 약 61.44MB(약58.6MiB)이며 행·메타데이터·중복 profile·인덱스 공간은 별도입니다. 차원·기사 수·chunk 길이·중복 버전·index를 파일럿으로 측정하고 한도 접근 시 전체 원문 자동 embedding을 멈춥니다.
+원문·checkpoint와 같은 로컬 PostgreSQL 디스크를 사용하며, 공개 데모(향후)로 export할 경우 Supabase Free 한도를 별도로 확인합니다. 예를 들어 float32 1,536차원×10,000 chunk의 벡터 payload만 약 61.44MB(약58.6MiB)이며 행·메타데이터·중복 profile·인덱스 공간은 별도입니다. 차원·기사 수·chunk 길이·중복 버전·index를 파일럿으로 측정하고 한도 접근 시 전체 원문 자동 embedding을 멈춥니다.
 
 초기에는 핵심 스키마·선택 뉴스 범위만 색인합니다. 임베딩 변경은 독립 job으로 실행하고 완료한 profile만 검색에 노출합니다. text chunk는 원문 offset과 해시를 보존하고 원문 정정 시 새 버전에만 생성합니다.
 

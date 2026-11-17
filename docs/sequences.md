@@ -4,33 +4,32 @@
 
 최종 산출물은 Part B의 **근거 기반 심층 리서치 보고서**입니다. 아래 기존 KG 생성·탐색 시퀀스는 보고서 근거를 공급하며 보고서 생성·검토·공개 흐름을 13번에 추가했습니다. 공개 사용자는 보고서를 조회하고 생성·재작성은 로컬 관리자와 Worker가 수행합니다.
 
-> 2026-11-13 로컬 본체/공개 데모 분리([corpus-feasibility §8](corpus-feasibility.md))에 따라 아래 다이어그램의 Neo4j·Aura는 **공개 데모 구성(AuraDB Free)** 기준입니다. 로컬 본체는 같은 흐름을 Neo4j Community·로컬 PostgreSQL에 적용하며 공개용 export 단계가 선별 적재합니다. 다이어그램은 아직 이 분리를 반영해 갱신하지 않았습니다.
+> **읽는 법(2026-11-17 정리):** 로컬 본체 우선 결정(2026-11-13, [corpus-feasibility §8](corpus-feasibility.md))에 따라 MVP의 정본은 **로컬 PostgreSQL**, 그래프도 **같은 로컬 PostgreSQL의 그래프 테이블**입니다([README 저장소 기준](../README.md), 2026-11-17 Neo4j 제외 결정). 다이어그램 참여자도 이 기준으로 바꿨습니다. `로컬 PostgreSQL`과 `로컬 PostgreSQL 그래프 테이블`이 따로 그려진 곳은 같은 DB의 다른 테이블이며, 그래프 쓰기와 작업 상태 기록은 한 트랜잭션입니다. `Supabase 공개 사본`과 `Render`는 공개 데모(향후) 구성이며, 공개용 export 단계가 로컬 정본에서 선별 적재합니다.
 
-모든 다이어그램의 Neo4j는 외부 **Neo4j AuraDB Free**를 의미합니다. Python 서버·Worker·초기화 CLI만 TLS로 접속하며, PWA는 FastAPI를 통해 접근합니다. DB 초기화는 Aura 인스턴스 생성이 아니라 기존 인스턴스의 제약·인덱스 준비입니다. 개발 삭제·복구는 프로젝트·버전 범위로 한정합니다. `kg_snapshot_id`는 물리 DB 복사본이 아니라 PostgreSQL의 불변 corpus/claim/evidence/batch manifest와 Aura membership을 가리킵니다.
+공개 데모(향후)도 그래프를 Supabase PostgreSQL의 그래프 테이블에 두며 AuraDB는 쓰지 않습니다. Python 서버·Worker·초기화 CLI만 DB에 접속하고 PWA는 FastAPI를 통해 접근합니다. DB 초기화는 그래프 테이블 마이그레이션(고유 제약·인덱스)입니다. 개발 삭제·복구는 프로젝트·버전 범위로 한정합니다. `kg_snapshot_id`는 물리 DB 복사본이 아니라 PostgreSQL의 불변 corpus/claim/evidence/batch manifest와 snapshot membership 테이블을 가리킵니다.
 
-아래 추출/정합화는 [EDC·KGGen 등 Part A 참조](reference-implementation-plan.md), 보고서 경로·부분 분석/종합은 ToG·GraphRAG, cutoff 도구는 MIRAI를 참고한 프로젝트용 변형입니다. 필요한 embedding 검색은 별도 로컬 adapter·Supabase pgvector로 수행하며 근거·snapshot 검증을 대체하지 않습니다.
+아래 추출/정합화는 [EDC·KGGen 등 Part A 참조](reference-implementation-plan.md), 보고서 경로·부분 분석/종합은 ToG·GraphRAG, cutoff 도구는 MIRAI를 참고한 프로젝트용 변형입니다. 필요한 embedding 검색은 별도 로컬 adapter·PostgreSQL pgvector로 수행하며 근거·snapshot 검증을 대체하지 않습니다.
 
-배포 모드는 공개 조회 데모와 로컬 관리로 나눕니다. 아래 수집·Part A·Part B·관리·초기화 시퀀스는 로컬 관리자 API와 로컬 Worker에서만 실행합니다. Render에서는 PWA 정적 파일과 읽기 전용 FastAPI만 제공하고 생성·변경 API를 등록하지 않습니다. 모든 Checkpointer는 Supabase PostgreSQL의 `langgraph` 스키마를 가리킵니다.
+배포 모드는 로컬 관리(`local_admin`, MVP)와 공개 조회 데모(`public_demo`, 향후)로 나눕니다. 아래 수집·Part A·Part B·관리·초기화 시퀀스는 로컬 관리자 API와 로컬 Worker에서만 실행합니다. 공개 데모의 Render에서는 PWA 정적 파일과 읽기 전용 FastAPI만 제공하고 생성·변경 API를 등록하지 않습니다. 모든 Checkpointer는 로컬 PostgreSQL의 `langgraph` 스키마를 가리킵니다.
 
 ```mermaid
 sequenceDiagram
     actor Visitor as 공개 방문자
-    participant Render as Render PWA·조회 API
-    participant DB as Supabase Free
-    participant Aura as AuraDB Free
+    participant Render as Render PWA·조회 API (향후)
+    participant Pub as Supabase Free 공개 사본 (향후)
     participant Local as 로컬 관리자·Worker
+    participant DB as 로컬 PostgreSQL 정본·그래프 테이블
     participant Backup as 로컬 예약 백업
     participant Disk as 로컬 영속 경로·별도 저장소
-    Local->>DB: 원문·분석 계약·추출 결과·보고서·체크포인트 저장
-    Local->>Aura: 검증된 KG 적재
+    Local->>DB: 원문·분석 계약·추출 결과·그래프 테이블·보고서·체크포인트 저장
+    Local->>Pub: 공개 범위 선별 export
     Visitor->>Render: PWA 실행·데모 조회
-    Render->>DB: 데모 범위 읽기
-    Render->>Aura: 고정 읽기 쿼리
+    Render->>Pub: 데모 범위 고정 읽기 쿼리
     Render-->>Visitor: 공개 보고서·원문 근거·Markdown
     Backup->>DB: newscontext·langgraph 단일 snapshot dump
     DB-->>Backup: 백업 데이터
     Backup->>Disk: 정상 dump·별도 사본 보관
-    Note over Render,Disk: Render 로컬 디스크에 체크포인트·dump를 보관하지 않음
+    Note over Render,Disk: Render 로컬 디스크에 체크포인트·dump를 보관하지 않음. 백업 대상은 로컬 정본
 ```
 
 ## 1. 대단위: 뉴스 수집부터 심층 보고서 공개까지
@@ -44,11 +43,12 @@ sequenceDiagram
     participant API as 로컬 관리 API
     participant Worker as 로컬 Worker
     participant Source as 뉴스 출처
-    participant DB as Supabase 정본·실행 상태
+    participant DB as 로컬 PostgreSQL 정본·실행 상태
     participant A as Part A 온톨로지·KG 구축
     participant B as Part B 보고서 파이프라인
-    participant KG as Aura 파생 그래프
-    participant Public as Render 공개 조회 API
+    participant KG as 로컬 PostgreSQL 그래프 테이블
+    participant Pub as Supabase 공개 사본 (향후)
+    participant Public as Render 공개 조회 API (향후)
     actor Reader as 독자
     Admin->>API: 언론사·기간·페이지 범위 지정
     API->>DB: 수집 작업 등록
@@ -86,10 +86,13 @@ sequenceDiagram
     API->>DB: approved 상태 저장
     Admin->>API: 승인 보고서 버전 공개
     API->>DB: published 포인터 원자적 변경
-    Reader->>Public: 보고서 목록·상세 조회
-    Public->>DB: 공개 버전·원문 인용만 조회
-    DB-->>Public: 고정 report_version_id의 보고서·출처
-    Public-->>Reader: PWA 본문·근거·동일 버전 Markdown
+    opt 공개 데모 (향후)
+        Worker->>Pub: published 버전·인용 원문 선별 export
+        Reader->>Public: 보고서 목록·상세 조회
+        Public->>Pub: 공개 버전·원문 인용만 조회
+        Pub-->>Public: 고정 report_version_id의 보고서·출처
+        Public-->>Reader: PWA 본문·근거·동일 버전 Markdown
+    end
 ```
 
 지원하지 않는 brief·미승인 계약·검증 실패·초안 상태는 공개로 진행하지 않습니다. 자료가 부족하면 분석 한계를 명시하거나 검토로 보류합니다. 이미 승인된 계약과 ready KG snapshot이 질문·기간을 지원하면 Part A를 반복하지 않고 Part B를 새 brief로 실행할 수 있습니다. Part A는 온톨로지·KG를 구축하는 단계이며 런타임 전문가 검색·팀 구성 기능을 뜻하지 않습니다.
@@ -103,7 +106,7 @@ sequenceDiagram
     participant API as 로컬 관리 API
     participant A as Part A 함수 파이프라인
     participant Model as LangChain 구조화 모델
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     Admin->>API: 지원할 질문 유형·표본·보고서 요구 지정
     API->>A: define_question_types → select_samples
     A->>DB: 표본 원문 버전·기존 온톨로지 조회
@@ -139,8 +142,7 @@ sequenceDiagram
     participant CLI as 초기화 CLI
     participant Config as load_settings()
     participant Migration as apply_migrations()
-    participant DB as Supabase PostgreSQL
-    participant KG as Neo4j
+    participant DB as 로컬 PostgreSQL
     Operator->>CLI: DB 초기화 명령
     CLI->>Config: 환경변수 로딩·검증
     Config-->>CLI: 접속 설정
@@ -152,8 +154,7 @@ sequenceDiagram
         DB-->>Migration: 결과
         Migration->>DB: 성공 버전 기록
     end
-    CLI->>KG: 고유 제약 생성 IF NOT EXISTS
-    KG-->>CLI: 제약 확인 결과
+    Note over Migration,DB: 그래프 테이블(node·relation·snapshot membership)과 고유 제약도 같은 마이그레이션으로 생성
     CLI-->>Operator: 적용 버전·결과 출력
     Note over Migration,DB: 일반 마이그레이션은 데이터 보존. 트랜잭션 가능 DDL과 별도 실행이 필요한 DDL을 구분
 ```
@@ -169,7 +170,7 @@ sequenceDiagram
     participant HTTP as fetch_html()
     participant Source as 뉴스 출처
     participant Save as save_article_version()
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     Worker->>Run: 수집 범위·실행 설정
     loop 언론사·날짜·허용 페이지
         Run->>Pure: make_list_url(source, date, page)
@@ -216,7 +217,7 @@ sequenceDiagram
     autonumber
     participant Run as run_crawl()
     participant Save as save_article_version()
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     Run->>Save: NormalizedArticle
     Save->>DB: BEGIN·기사 식별 및 공통 행 잠금
     Save->>Save: 논리 참조 존재·기사 소속 검사
@@ -238,7 +239,7 @@ sequenceDiagram
     Save-->>Run: created / unchanged / revised
 ```
 
-Supabase PostgreSQL에는 FK를 생성하지 않습니다. 참조 검증과 저장은 같은 연결·트랜잭션에서 실행하고, 부모 삭제 경로도 동일한 행 잠금 규칙을 적용합니다. 신규 기사는 기사 행을 먼저 만든 뒤 원문 버전과 최신 버전 참조를 저장합니다. 고유 인덱스 충돌은 다른 작업의 선행 저장 여부를 다시 조회해 판정합니다. 무결성 오류를 모두 중복으로 처리하지 않습니다. 새 원문 처리 전에는 기존 그래프 결과가 이전 버전 기준임을 표시합니다.
+PostgreSQL(로컬 정본)에는 FK를 생성하지 않습니다. 참조 검증과 저장은 같은 연결·트랜잭션에서 실행하고, 부모 삭제 경로도 동일한 행 잠금 규칙을 적용합니다. 신규 기사는 기사 행을 먼저 만든 뒤 원문 버전과 최신 버전 참조를 저장합니다. 고유 인덱스 충돌은 다른 작업의 선행 저장 여부를 다시 조회해 판정합니다. 무결성 오류를 모두 중복으로 처리하지 않습니다. 새 원문 처리 전에는 기존 그래프 결과가 이전 버전 기준임을 표시합니다.
 
 ## 5. 하위: Part A 구조화 추출·검증·정합화
 
@@ -247,7 +248,7 @@ sequenceDiagram
     autonumber
     participant Flow as Part A StateGraph
     participant Read as load_article_version()
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     participant Pure as 주제·분할·검증 함수
     participant Extract as extract_candidates()
     participant Model as LangChain 구조화 모델
@@ -300,8 +301,8 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant Flow as Part A StateGraph
-    participant DB as Supabase PostgreSQL
-    participant CP as Supabase PostgreSQL Checkpointer
+    participant DB as 로컬 PostgreSQL
+    participant CP as 로컬 PostgreSQL Checkpointer
     participant Worker as Worker
     actor Reviewer as 검토자
     participant API as 검토 API
@@ -343,44 +344,40 @@ sequenceDiagram
     participant Flow as Part A StateGraph
     participant Pure as build_graph_batch()
     participant Write as write_graph_batch()
-    participant KG as Neo4j
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL 그래프 테이블·작업 상태
     Flow->>Pure: 검증·정합화 완료 후보
     Pure-->>Flow: 안정 ID·매개변수 GraphBatch
-    Flow->>Write: GraphBatch
-    Write->>KG: BEGIN
-    Write->>KG: 고유 키로 Document·Entity·Event·Claim·Evidence MERGE
-    Write->>KG: 관계 반영·해당 기사 이전 주장 상태 갱신
-    alt DB 쓰기 오류
-        KG-->>Write: 오류
-        Write->>KG: ROLLBACK
+    Flow->>Write: GraphBatch·실행 토큰
+    Write->>DB: BEGIN
+    Write->>DB: 현재 실행 토큰 확인
+    Write->>DB: 고유 키로 Document·Entity·Event·Claim·Evidence 노드 upsert
+    Write->>DB: 관계 upsert·해당 기사 이전 주장 상태 갱신
+    Write->>DB: graph_batch 완료 기록
+    alt DB 쓰기 오류 또는 토큰 불일치
+        DB-->>Write: 오류
+        Write->>DB: ROLLBACK
         Write-->>Flow: 재시도 가능 여부와 실패 정보
         Flow->>DB: 재시도 또는 failed 기록
-    else 그래프 적재 성공
-        Write->>KG: COMMIT
-        KG-->>Write: 완료
-        Write-->>Flow: 반영 결과
-    Flow->>DB: 현재 실행 토큰 확인·graph_batch 완료 기록
-        alt 완료 표시 성공
-            DB-->>Flow: graph_batch_complete (snapshot 발행 전)
-        else 프로세스 중단·Supabase PostgreSQL 실패
-            Note over Worker,DB: lease 만료 후 미완료 작업 재선점
-            Worker->>Flow: 동일 작업 재개 또는 복구 실행
-            Flow->>Write: 같은 멱등 키로 재적재 가능
-            Write->>KG: MERGE·상태 갱신 재확인
-            KG-->>Write: 중복 없는 동일 결과
-            Flow->>DB: 실행 토큰 확인 후 batch 완료 표시 재시도
-        end
+    else COMMIT 성공
+        Write->>DB: COMMIT
+        DB-->>Write: 완료
+        Write-->>Flow: graph_batch_complete (snapshot 발행 전)
+    else COMMIT 전 프로세스 중단
+        Note over Worker,DB: 트랜잭션은 롤백됨. lease 만료 후 미완료 작업 재선점
+        Worker->>Flow: 동일 작업 재개 또는 복구 실행
+        Flow->>Write: 같은 멱등 키로 재적재
+        Write->>DB: upsert·완료 기록을 한 트랜잭션으로 재실행
+        DB-->>Write: 중복 없는 동일 결과
     end
 ```
 
-체크포인트 복구 위치에 따라 적재 노드가 생략되거나 재실행될 수 있습니다. 두 경우 모두 외부 저장 결과가 동일하도록 설계합니다. Supabase PostgreSQL와 Neo4j를 하나의 분산 트랜잭션으로 묶지 않으며 작업 이력·멱등 쓰기·정기 대조로 일관성을 복구합니다. 정정으로 교체하는 주장은 해당 원문 계보에 한정하고, 다른 기사의 유효한 근거를 제거하지 않습니다.
+체크포인트 복구 위치에 따라 적재 노드가 생략되거나 재실행될 수 있습니다. 두 경우 모두 외부 저장 결과가 동일하도록 설계합니다. 그래프 테이블 쓰기와 작업 완료 표시는 같은 PostgreSQL 트랜잭션으로 묶고, 재실행에 대비해 멱등 쓰기를 유지합니다. 정정으로 교체하는 주장은 해당 원문 계보에 한정하고, 다른 기사의 유효한 근거를 제거하지 않습니다.
 
 ```mermaid
 sequenceDiagram
     participant A as Part A snapshot 발행 함수
-    participant DB as Supabase manifest·batch 상태
-    participant KG as Aura membership
+    participant DB as 로컬 PostgreSQL manifest·batch 상태
+    participant KG as 같은 DB의 snapshot membership 테이블
     A->>DB: 대상 batch가 모두 완료인지 확인
     A->>KG: manifest ID·membership·근거 참조 대조
     KG-->>A: 대조 결과
@@ -402,8 +399,8 @@ sequenceDiagram
     participant UI as React PWA
     participant API as FastAPI
     participant Query as 조회 함수
-    participant KG as Neo4j
-    participant DB as Supabase PostgreSQL
+    participant KG as 로컬 PostgreSQL 그래프 테이블
+    participant DB as 로컬 PostgreSQL 원문
     User->>UI: 기관·기간 선택
     UI->>API: GET /entities/{id}/events
     API->>Query: list_entity_events(id, period, page)
@@ -440,7 +437,7 @@ sequenceDiagram
     participant UI as PWA 관리자 화면
     participant API as 관리 API
     participant Auth as 인증 의존성
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     participant Worker as Worker
     Admin->>UI: 관리자 토큰 입력·로그인
     UI->>API: POST /auth/login
@@ -483,9 +480,9 @@ sequenceDiagram
     actor Admin as 개발 관리자
     participant API as 관리 API
     participant Reset as Part A 초기화 함수
-    participant DB as Supabase PostgreSQL
+    participant DB as 로컬 PostgreSQL
     participant Worker as Worker
-    participant KG as Neo4j
+    participant KG as 로컬 PostgreSQL 그래프 테이블
     Admin->>API: 삭제 대상·재생성 옵션으로 미리보기
     API->>API: 관리자 인증·development 환경 확인
     API->>Reset: plan_part_a_reset(scope)
@@ -515,7 +512,7 @@ sequenceDiagram
 
 실패하면 초기화 단계 이력으로 재개하고 재생성을 보류합니다. 연결 Part B가 있는데 함께 정리하지 않는 요청은 거부합니다. 초기화 범위의 새 작업 등록은 잠금 해제 전까지 제한합니다.
 
-범위 fence는 장시간 row lock과 다릅니다. Worker 종료·Aura 정리를 기다리는 동안 DB 트랜잭션을 열어두지 않습니다. 단계별로 짧게 잠금·상태를 확인하며 공개 포인터를 먼저 철회하고 삭제된 근거를 참조하는 보고서가 노출되지 않게 합니다. checkpoint는 지원되는 삭제 절차로 정리하고, 초기화 완료 전 늦게 도착한 작업 쓰기는 실행 토큰과 reset 세대로 거부합니다. 원문·감사 기록과 다른 보고서가 참조하는 공유 근거는 보존합니다.
+범위 fence는 장시간 row lock과 다릅니다. Worker 종료·그래프 정리를 기다리는 동안 DB 트랜잭션을 열어두지 않습니다. 단계별로 짧게 잠금·상태를 확인하며 공개 포인터를 먼저 철회하고 삭제된 근거를 참조하는 보고서가 노출되지 않게 합니다. checkpoint는 지원되는 삭제 절차로 정리하고, 초기화 완료 전 늦게 도착한 작업 쓰기는 실행 토큰과 reset 세대로 거부합니다. 원문·감사 기록과 다른 보고서가 참조하는 공유 근거는 보존합니다.
 
 ## 11. 하위: PWA 시작·오프라인·업데이트
 
@@ -563,14 +560,16 @@ sequenceDiagram
 
 처음부터 오프라인이고 앱 파일도 캐시되지 않은 경우에는 앱을 시작할 수 없습니다. 설치·일반 브라우저 실행 모두 같은 인증·캐시 정책을 적용합니다.
 
-## 12. 하위: Supabase Free 정기 dump·별도 보관
+## 12. 하위: PostgreSQL 정본 정기 dump·별도 보관
+
+> 백업 대상은 로컬 PostgreSQL 정본(그래프 테이블 포함)입니다. Supabase는 공개 데모(향후) export 대상이며 백업하지 않습니다([backup-restore](backup-restore.md)).
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Scheduler as 로컬 Windows 작업 스케줄러
     participant Backup as 백업 스크립트
-    participant DB as Supabase Free PostgreSQL
+    participant DB as 로컬 PostgreSQL 정본
     participant Disk as 로컬 백업 경로
     participant Copy as 별도 저장소
     Scheduler->>Backup: 매일 03:00 Asia/Seoul 실행
@@ -605,10 +604,11 @@ sequenceDiagram
     participant Worker as 로컬 Worker
     participant Agent as Part B 리서치 Agent
     participant Tools as 기간·경로·근거 조회 도구
-    participant DB as Supabase 원문·보고서·체크포인트
-    participant KG as Aura 지식그래프
+    participant DB as 로컬 PostgreSQL 원문·보고서·체크포인트
+    participant KG as 로컬 PostgreSQL 그래프 테이블
     participant Check as 보고서 검증 함수
-    participant Render as 공개 PWA·조회 API
+    participant Pub as Supabase 공개 사본 (향후)
+    participant Render as 공개 PWA·조회 API (향후)
     actor Reader as 독자
     Admin->>API: 질문·대상·기간·cutoff·계약·ready snapshot 지정
     API->>DB: research job 등록
@@ -634,10 +634,13 @@ sequenceDiagram
         Admin->>API: 승인 버전 공개
         API->>DB: published 포인터 변경
     end
-    Reader->>Render: 공개 보고서 열람·Markdown 다운로드
-    Render->>DB: published 포인터를 고정 report_version_id로 해석·해당 인용 조회
-    DB-->>Render: 구조화 보고서·출처
-    Render-->>Reader: 보고서·근거 패널·고정 버전 Markdown 링크
+    opt 공개 데모 (향후)
+        Worker->>Pub: published 버전·인용 원문 선별 export
+        Reader->>Render: 공개 보고서 열람·Markdown 다운로드
+        Render->>Pub: published 포인터를 고정 report_version_id로 해석·해당 인용 조회
+        Pub-->>Render: 구조화 보고서·출처
+        Render-->>Reader: 보고서·근거 패널·고정 버전 Markdown 링크
+    end
 ```
 
 초안은 공개되지 않으며 배포 서버에서 LLM을 호출하지 않습니다. 재작성은 새 버전으로 처리하고 공개된 버전을 직접 덮어쓰지 않습니다. 결과가 불충분하면 한계를 표시하거나 공개를 보류합니다.
@@ -652,8 +655,8 @@ sequenceDiagram
     participant Flow as 로컬 Part A 또는 Part B
     participant Policy as 검색 정책·profile 검증
     participant Embed as Embedding adapter
-    participant PG as Supabase pgvector
-    participant Graph as Aura snapshot 조회
+    participant PG as 로컬 PostgreSQL pgvector
+    participant Graph as 로컬 PostgreSQL 그래프 snapshot 조회
     participant Check as 원문·참조·의미 검증
     Flow->>Policy: 질문·source_type·프로젝트·snapshot/계약
     alt embedding 활성 및 계약 유효

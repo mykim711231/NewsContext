@@ -17,7 +17,7 @@ NewsContext는 경제뉴스에 표현된 이슈·사건·기업·업종·시장 
 | 연구 분야 | 프로젝트 분석 질문 | 적용 방법 | 결과와 근거 수준 | 우선순위 |
 |---|---|---|---|---|
 | Temporal Analysis | 이슈·보도된 반응이 언제 어떻게 달라졌는가? | 시간 속성을 가진 KG, Event Timeline, 버전 비교 | 사건·기사·수집 시각을 구분한 타임라인 | MVP |
-| Context Awareness | 사건 전후 같은 대상·이슈에 어떤 보도가 연결되는가? | 기간 필터·Cypher 경로 조회·근거 묶음; 후속 커뮤니티 탐색·그래프 기반 RAG | 관련 맥락과 원문 목록 | MVP, 확장 |
+| Context Awareness | 사건 전후 같은 대상·이슈에 어떤 보도가 연결되는가? | 기간 필터·SQL 그래프 경로 조회(1~2 hop)·근거 묶음; 후속 커뮤니티 탐색·그래프 기반 RAG | 관련 맥락과 원문 목록 | MVP, 확장 |
 | Logical Reasoning | 근거가 연결된 주장과 승인된 규칙에서 무엇을 도출할 수 있는가? | 명시적 규칙·기호 추론; 후속 Rule Mining | 규칙 ID·입력 주장·유도 경로가 있는 도출 결과 | 2차 |
 | Knowledge Discovery | 아직 검증되지 않은 연결 후보는 무엇인가? | 제한된 multi-hop 경로·공통 이웃·후속 구조 기반 Link Prediction | 후보와 경로·점수·검토 상태 | 2차 |
 | Causal Relation Analysis | 기사에서 어떤 사건을 다른 사건의 배경·원인으로 설명하는가? | Event Causality Extraction, 주장 귀속·인용 검증 | 보도된 원인 설명과 발화자·기사 근거 | MVP |
@@ -39,17 +39,17 @@ NewsContext는 경제뉴스에 표현된 이슈·사건·기업·업종·시장 
 
 MVP는 이슈/대상 ID·키워드·별칭으로 시작 노드를 찾고 날짜 범위와 제한된 1~2 hop 경로로 관련 기사·주장을 조회합니다. 같은 기간에 있다는 이유만으로 관련성을 확정하지 않고 공유 대상·사건·명시 관계를 표시합니다.
 
-기본은 구조화 검색·Cypher이며 필요한 구간에는 임베딩을 조건부 허용합니다. 스키마·개체·기사 후보 검색의 pgvector 결과는 동일 snapshot·시간 범위·모델 profile로 제한합니다. GraphRAG의 원형 local search는 embedding 입력을 사용하고 global community map/reduce는 별도 경로이므로 둘을 구분합니다. 패키지 전체를 도입하기보다 ToG식 경로 탐색과 근거 묶음 종합을 LangGraph로 재구성합니다. [GraphRAG 개요](https://microsoft.github.io/graphrag/), [참조 구현 계획](reference-implementation-plan.md), [임베딩 설계](embedding-retrieval.md)
+기본은 구조화 검색·고정 SQL 그래프 조회이며 필요한 구간에는 임베딩을 조건부 허용합니다. 스키마·개체·기사 후보 검색의 pgvector 결과는 동일 snapshot·시간 범위·모델 profile로 제한합니다. GraphRAG의 원형 local search는 embedding 입력을 사용하고 global community map/reduce는 별도 경로이므로 둘을 구분합니다. 패키지 전체를 도입하기보다 ToG식 경로 탐색과 근거 묶음 종합을 LangGraph로 재구성합니다. [GraphRAG 개요](https://microsoft.github.io/graphrag/), [참조 구현 계획](reference-implementation-plan.md), [임베딩 설계](embedding-retrieval.md)
 
-Community Detection은 촘촘히 연결된 보도 주제를 묶는 보조 기능입니다. 군집은 실제 산업 분류·인과 집단의 정답이 아닙니다. AuraDB Free에서 특정 GDS 프로시저의 사용 가능성을 가정하지 않고 작은 부분 그래프를 로컬로 내보내 알고리즘을 적용하는 방식을 먼저 검토합니다. 데이터 충분성과 평가가 확보되면 Louvain 등의 방법을 비교합니다. [Neo4j Louvain 문서](https://neo4j.com/docs/graph-data-science/current/algorithms/louvain/)
+Community Detection은 촘촘히 연결된 보도 주제를 묶는 보조 기능입니다. 군집은 실제 산업 분류·인과 집단의 정답이 아닙니다. 그래프 DB의 GDS 프로시저를 쓰지 않고 snapshot 범위 부분 그래프를 PostgreSQL에서 읽어 Python(예: networkx)으로 알고리즘을 적용합니다. 데이터 충분성과 평가가 확보되면 Louvain 등의 방법을 비교합니다. [Neo4j Louvain 문서](https://neo4j.com/docs/graph-data-science/current/algorithms/louvain/)
 
-공개 Render 데모는 사전 계산한 근거·맥락 결과를 조회합니다. 방문자 요청마다 LLM을 호출하지 않으며 실시간 Agent 질의응답은 공개 MVP 범위가 아닙니다.
+공개 Render 데모(향후)는 사전 계산한 근거·맥락 결과를 조회합니다. 방문자 요청마다 LLM을 호출하지 않으며 실시간 Agent 질의응답은 공개 MVP 범위가 아닙니다.
 
 검증: 고정 질문별 관련 기사 precision/recall, 기간 밖 자료 유입, 원문 근거와 요약의 정합성을 확인합니다.
 
 ## 5. Logical Reasoning: 규칙을 설명할 수 있는 도출
 
-초기에는 승인된 명시 규칙을 Python 함수 또는 고정 Cypher로 구현합니다. 예를 들어 “기업이 업종에 속하고 해당 기업이 사건의 참여자라면 그 사건은 업종 맥락 후보가 된다”는 규칙을 적용할 수 있습니다. 이 결론은 업종 전체가 영향을 받았다는 사실이 아닙니다.
+초기에는 승인된 명시 규칙을 Python 함수 또는 고정 SQL로 구현합니다. 예를 들어 “기업이 업종에 속하고 해당 기업이 사건의 참여자라면 그 사건은 업종 맥락 후보가 된다”는 규칙을 적용할 수 있습니다. 이 결론은 업종 전체가 영향을 받았다는 사실이 아닙니다.
 
 각 결과는 `rule_id`, `rule_version`, `premise_claim_ids`, `valid_time`, `derived_at`, `status`를 보관합니다. 입력 근거 철회·정정 시 의존 결과를 재계산합니다. 정보가 없다는 사실을 부정의 증거로 사용하지 않습니다.
 
@@ -113,7 +113,7 @@ Crawler는 함수 파이프라인으로 고정하고 원문·시간·버전을 �
 | 허용 조회 도구·검색 범위·호출/시간/토큰 상한 | 실제 도구 호출·탐색 경로·사용량·중단 사유 |
 | 자동 검사·사람 검토·공개 차단 기준 | 검사 결과·검토 대상 해시·공개 결정 |
 
-Part A는 표본 기사로 계약의 표현 가능성과 반례를 확인한 뒤 승인 버전을 발행하고, 이를 사용해 실제 대상 원문의 KG를 구축합니다. 온톨로지 승인만 있고 KG 구축·검증이 완료되지 않았다면 인계 완료가 아닙니다. snapshot manifest에는 분석 계약·온톨로지 버전, 원문 버전/해시, 주장·근거·정합화·적재 버전 및 검증 결과를 묶습니다. Aura의 물리 DB snapshot 기능을 가정하는 것이 아니라, 앱이 발행하는 불변 데이터 버전/manifest입니다.
+Part A는 표본 기사로 계약의 표현 가능성과 반례를 확인한 뒤 승인 버전을 발행하고, 이를 사용해 실제 대상 원문의 KG를 구축합니다. 온톨로지 승인만 있고 KG 구축·검증이 완료되지 않았다면 인계 완료가 아닙니다. snapshot manifest에는 분석 계약·온톨로지 버전, 원문 버전/해시, 주장·근거·정합화·적재 버전 및 검증 결과를 묶습니다. DB의 물리 snapshot 기능을 가정하는 것이 아니라, 앱이 발행하는 불변 데이터 버전/manifest입니다.
 
 개별 보고서의 질문·대상·기간은 Part B의 연구 브리프로 받고, 지원되지 않는 질문이나 KG 부족은 범위 축소 또는 Part A 보완 요청으로 돌립니다. 보완 결과는 새 kg_snapshot_id로 발행하고 Part B는 새 manifest를 고정한 별도 실행을 시작합니다. 기존 보고서 실행 중 입력 KG를 조용히 바꾸지 않습니다. 문서 개정 자체를 앱의 자동 전문가 편성 기능으로 해석하지 않습니다.
 
@@ -128,7 +128,7 @@ Agent를 적용할 경우 Part A에는 표본 조회·스키마 검증·구조�
   → 정보 부족: snapshot 내 추가 조회 또는 Part A 보완 요청·확인 불가 반환
 ```
 
-도구·조회 횟수·기간·hop·토큰·총 시간을 제한합니다. 삭제·승인·최종 적재·백업 복원은 명시적 프로그램 함수와 관리자 권한이 제어합니다. Agent가 임의 SQL/Cypher·운영 스키마 변경을 실행하지 않습니다. 로컬에서 생성·검토한 분석 결과만 공개 데모에 제공합니다. 본 문서는 Agent 구현을 완료했다는 의미가 아닙니다.
+도구·조회 횟수·기간·hop·토큰·총 시간을 제한합니다. 삭제·승인·최종 적재·백업 복원은 명시적 프로그램 함수와 관리자 권한이 제어합니다. Agent가 임의 SQL·운영 스키마 변경을 실행하지 않습니다. 로컬에서 생성·검토한 분석 결과만 공개 데모에 제공합니다. 본 문서는 Agent 구현을 완료했다는 의미가 아닙니다.
 
 ## 11. 구현 순서와 시연
 
