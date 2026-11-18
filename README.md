@@ -379,28 +379,43 @@ Claim ─ABOUT→ Event ─ACTOR→ Entity
 Crawler: make_list_url → fetch_html → parse_links → normalize_url
       → fetch_html → parse_article → normalize_article → save_article_version
 
-Part A-온톨로지: define_questions → select_samples → propose_schema
-        → canonicalize_schema → validate_schema → approve_schema → publish_schema
+Part A-온톨로지: define_questions → select_samples → propose_ontology
+        → normalize_schema → validate_schema → review_ontology → approve_contract
 
-Part A-KG: load_article_version → load_approved_contract → filter_topic → split_article → extract_candidates
-      → validate_candidates → canonicalize_candidates → decide_review
-      → build_graph_batch → write_graph_batch → mark_job_complete
-      → freeze_kg_manifest → validate_report_readiness → publish_kg_snapshot
+Part A-KG: load_article_version → load_approved_contract → filter_topic → split_article
+      → extract_candidates → validate_candidates
+      → load_aliases → canonicalize_entities → resolve_event_candidates
+      → revalidate_references → decide_review
+      → build_graph_batch → write_graph_batch
+      → verify_graph_batch → freeze_kg_manifest → validate_report_readiness → publish_kg_snapshot
 
-Part B: validate_report_brief → load_ready_snapshot → retrieve_evidence
-      → compare_claims → draft_report → validate_citations → review_report
-      → publish_report_version → render_markdown
+Part B: create_research_job → validate_part_a_handoff → freeze_kg_snapshot_and_scope
+      → plan_questions → retrieve_evidence → assess_coverage → compare_claims
+      → build_report_outline → draft_report → validate_citations_and_claims
+      → save_draft → human_review → publish_version → render_markdown
 ```
+
+#### 단계명·상태값 정본
+
+위 코드 블록의 함수 이름과 아래 상태값 표를 **정본**으로 둡니다. [Part A 계획](docs/part-a-planning.md)·[보고서 출력](docs/report-output.md)·[시퀀스](docs/sequences.md)·[기술 스택 분석](docs/tech-stack-analysis.md)은 이 이름을 따르고, 분기(근거 부족 시 snapshot 내부 추가 조회, Part A 보완 요청, 제한된 repair, 검토 interrupt)만 각 문서에서 설명합니다. 이름이나 상태값을 바꿀 때는 이 절을 먼저 고칩니다.
+
+| 대상 | 상태값 | 비고 |
+|---|---|---|
+| Part B 작업(`research_jobs.status`) | queued / running / waiting_review / waiting_part_a / completed / failed / cancelled | waiting_part_a는 `request_part_a_enrichment` 후 보완 대기 |
+| 보고서 버전(`report_versions.status`) | draft / needs_revision / approved / published / withdrawn | approved에서 명시적 publish로만 published |
+| KG snapshot(`kg_snapshots.status`) | building / validating / ready / withdrawn / failed | Part B는 ready만 사용 |
+
+**그래프 적재 트랜잭션 경계:** `write_graph_batch`는 실행 토큰 확인, 그래프 노드·관계 upsert, 해당 기사 이전 주장 상태 갱신, `graph_batch` 완료 기록을 **한 PostgreSQL 트랜잭션**으로 커밋합니다. 완료 기록만 따로 커밋하는 단계는 두지 않습니다. COMMIT 전에 중단되면 전체가 롤백되고, lease 만료 후 같은 멱등 키로 재실행합니다. 멱등 키(`graph_batch_id`, 노드·관계 고유 키)의 UNIQUE 제약은 그래프 테이블 마이그레이션에 포함합니다([시퀀스 7](docs/sequences.md)).
 
 | 함수 유형 | 대표 함수 | 설계 규칙 |
 |---|---|---|
 | 순수 변환 | parse_links, normalize_article, split_article, build_graph_batch | 같은 입력이면 같은 출력; 원본 인자를 수정하지 않고 새 값 반환 |
 | 순수 판정 | validate_candidates, decide_review | 검증 오류와 분기 결과를 값으로 반환; DB·모델 호출 금지 |
 | 외부 조회·호출 | fetch_html, load_article_version, extract_candidates | 클라이언트·설정을 명시적으로 주입; 타임아웃·비용 기록 |
-| 외부 저장 | save_article_version, write_graph_batch, mark_job_complete | 트랜잭션·고유 키·멱등성 보장 |
+| 외부 저장 | save_article_version, write_graph_batch, save_draft | 트랜잭션·고유 키·멱등성 보장; write_graph_batch는 완료 기록까지 한 트랜잭션 |
 | 실행 조립 | run_crawl, build_processing_graph | 순서·분기·재시도 정책 구성; 업무 규칙은 하위 함수에 배치 |
 
-기관 별칭 조회와 실제 정합화도 `load_aliases → canonicalize_candidates`로 분리합니다. 현재 시각·랜덤 ID는 실행 경계에서 생성하여 인자로 전달하고, DB 연결·모델 객체는 체크포인트 상태에 넣지 않습니다. 상태에는 직렬화 가능한 ID·버전·결과·오류만 보관하고 실행 의존성은 조립 시 주입합니다.
+기관 별칭 조회와 실제 정합화도 `load_aliases → canonicalize_entities`로 분리합니다. 현재 시각·랜덤 ID는 실행 경계에서 생성하여 인자로 전달하고, DB 연결·모델 객체는 체크포인트 상태에 넣지 않습니다. 상태에는 직렬화 가능한 ID·버전·결과·오류만 보관하고 실행 의존성은 조립 시 주입합니다.
 
 각 함수는 업무 단위의 타입 계약을 사용합니다. 예를 들어 `normalize_article(ParsedArticle) → NormalizedArticle`, `validate_candidates(CandidateBatch, ArticleVersion, Ontology) → ValidationResult`, `build_graph_batch(ValidatedBatch) → GraphBatch`로 구성합니다. 빈 결과·주제 제외·검토 필요는 명시적 상태로 반환하며 네트워크·저장 실패는 분류된 예외로 전달합니다. 정상적인 기사 한 건의 제외가 전체 배치를 실패시키지 않도록 집계합니다.
 
@@ -521,9 +536,9 @@ Part B 참조가 없는 Part A 데이터는 사용 중 작업을 확인한 뒤 �
 
 초기화는 `APP_MODE=local_admin`에서 관리자 인증 후 실행하며 `public_demo`에서는 라우트를 등록하지 않습니다. `POST /admin/part-a/reset-preview`는 삭제 범위·참조 관계를 계산하고, `POST /admin/part-a/reset`은 명시된 대상·연결 Part B 포함 여부·재생성 옵션으로 실행합니다. 미리보기와 실행 사이 대상이 바뀌면 재계산을 요구합니다. 관리자 조작·초기화 작업 이력은 삭제 범위에서 제외합니다.
 
-함수 흐름은 `plan_part_a_reset → lock_reset_scope → stop_and_wait_jobs → delete_linked_part_b → delete_part_a_data → verify_reset → enqueue_part_a_rebuild`로 구성합니다. 연결 Part B가 없으면 해당 삭제 단계는 건너뜁니다. PostgreSQL에는 FK가 없으므로 자식→부모 순서(그래프 테이블 포함)를 프로그램에서 제어하고, 부분 실패는 초기화 작업 단계 이력을 이용해 재실행합니다. 전체 삭제와 검증이 성공하기 전에는 재생성을 시작하지 않습니다. 초기화가 완료될 때까지 대상 범위는 일반 조회·실행에서 제외합니다.
+함수 흐름은 `plan_part_a_reset → lock_reset_scope → stop_and_wait_jobs → backup_before_reset → verify_reset_backup → delete_linked_part_b → delete_part_a_data → verify_reset → enqueue_part_a_rebuild`로 구성합니다. 대상 작업이 멈춘 뒤 사전 dump를 만들고 dump 검증(파일 생성·크기·`pg_restore --list` 목록 확인)이 성공해야 삭제를 시작합니다. 사전 백업이나 검증이 실패하면 삭제하지 않고 잠금을 풀며, dump 경로·해시는 초기화 작업 이력에 기록합니다([백업·복원](docs/backup-restore.md)). 연결 Part B가 없으면 해당 삭제 단계는 건너뜁니다. PostgreSQL에는 FK가 없으므로 자식→부모 순서(그래프 테이블 포함)를 프로그램에서 제어하고, 부분 실패는 초기화 작업 단계 이력을 이용해 재실행합니다. 전체 삭제와 검증이 성공하기 전에는 재생성을 시작하지 않습니다. 초기화가 완료될 때까지 대상 범위는 일반 조회·실행에서 제외합니다.
 
-완료 기준은 선택/전체 초기화, 승인 버전 삭제, 원문 보존, 연결 Part B 정리, 공유 그래프 보존, 삭제 중 실패 후 재개, 운영 모드 차단, 같은 입력을 이용한 재생성입니다.
+완료 기준은 사전 dump 검증 실패 시 삭제 중단, 선택/전체 초기화, 승인 버전 삭제, 원문 보존, 연결 Part B 정리, 공유 그래프 보존, 삭제 중 실패 후 재개, 운영 모드 차단, 같은 입력을 이용한 재생성입니다.
 
 관리자 화면을 MVP 필수 기능으로 포함합니다. 사용자 화면은 검색·사건·근거 조회에 집중하고 관리자 화면은 데이터 생성·검토·복구를 담당합니다. 같은 FastAPI와 업무 함수를 재사용하며 화면에서 DB에 직접 접근하지 않습니다.
 

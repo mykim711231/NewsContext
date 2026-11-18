@@ -109,7 +109,7 @@ FK 미사용은 구현 부담을 DB에서 프로그램으로 옮기는 선택입
 
 업무 transaction은 짧게 유지합니다. LLM·HTTP 응답을 기다리는 동안 row lock이나 DB 연결을 점유하지 않습니다. psycopg connection context의 commit/rollback을 명시적으로 사용하고 작은 connection pool로 시작합니다. 로컬 Worker·관리 API·체크포인터의 합산 연결 수를 관리합니다. 공개 데모(향후)에서는 앱 pool과 Supabase pooler의 역할이 다르며 Render 연결도 합산합니다. [psycopg pool](https://www.psycopg.org/psycopg3/docs/advanced/pool.html)
 
-작업 상태와 보고서 상태는 분리합니다. 작업은 queued/running/waiting_review/completed/failed/cancelled, 보고서 버전은 draft/needs_revision/approved/published/withdrawn으로 관리합니다. 코드에서 허용 전이를 검사하고 중복 요청 키·보고서 content_hash·인용 manifest를 승인에 묶습니다. `published` 포인터 갱신은 PostgreSQL의 한 트랜잭션으로 처리하며 독자에게 서로 다른 버전의 본문·인용·다운로드가 섞이지 않도록 `report_version_id`를 응답과 다운로드에 고정합니다.
+작업 상태와 보고서 상태는 분리합니다. 작업은 queued/running/waiting_review/waiting_part_a/completed/failed/cancelled, 보고서 버전은 draft/needs_revision/approved/published/withdrawn으로 관리합니다(정본: [README 단계명·상태값](../README.md)). 코드에서 허용 전이를 검사하고 중복 요청 키·보고서 content_hash·인용 manifest를 승인에 묶습니다. `published` 포인터 갱신은 PostgreSQL의 한 트랜잭션으로 처리하며 독자에게 서로 다른 버전의 본문·인용·다운로드가 섞이지 않도록 `report_version_id`를 응답과 다운로드에 고정합니다.
 
 필수 인덱스는 기사 식별·원문 버전·프로젝트/상태/생성시각별 작업·참조 ID입니다. 사용하지 않는 JSONB 전체 GIN 인덱스를 미리 추가하지 않습니다. 키워드는 초기 ILIKE와 구조화 필터로 시작하고 느려지면 `pg_trgm` GIN을 측정합니다. 이는 임베딩이 아니라 문자 기반 인덱스이며 짧은 검색어·한국어 표현별 효율을 확인해야 합니다. [PostgreSQL pg_trgm](https://www.postgresql.org/docs/current/pgtrgm.html)
 

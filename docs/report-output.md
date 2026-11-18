@@ -72,7 +72,7 @@ KG 조회는 manifest 소속 주장·관계 ID와 버전 범위로 제한합니�
 
 분석 기간과 정보 기준 시점은 구분합니다. 과거 가용 자료 재현에서는 발행 시점과 시스템 가용 시점 모두 cutoff 조건을 만족하는 불변 원문 버전을 사용합니다. 처음 수집한 과거 기사로 당시 보도를 분석하는 경우에는 ‘현재 수집한 과거 보도의 회고 분석’으로 표시하고 당시 가용 자료를 재현했다고 주장하지 않습니다. 이후 수정 기사·새 근거를 반영하면 새 보고서 버전을 생성합니다. LLM에 원문을 전달할 때 기사 내 지시문을 시스템 지시로 실행하지 않고 데이터로 취급합니다.
 
-작업 상태는 queued/running/waiting_review/waiting_part_a/completed/failed/cancelled, 보고서 버전 상태는 draft/needs_revision/approved/published/withdrawn으로 분리합니다. approved에서 명시적 publish를 거쳐 공개합니다. 공개 버전은 수정하지 않고 새 draft가 검토된 뒤 published 포인터를 바꿉니다. 승인 대상 해시는 보고서 content·인용 manifest·분석 계약 버전·온톨로지 버전·KG snapshot을 포함합니다. 새 보고서가 다른 원문·계약·snapshot을 사용하면 기존 승인을 재사용하지 않습니다. 원문 정정이 발생했다고 과거 보고서의 고정 입력을 덮어쓰지 않으며, 영향 검토 후 구버전 경고·철회 또는 새 버전 발행을 선택합니다.
+작업 상태는 queued/running/waiting_review/waiting_part_a/completed/failed/cancelled([README 단계명·상태값 정본](../README.md)), 보고서 버전 상태는 draft/needs_revision/approved/published/withdrawn으로 분리합니다. approved에서 명시적 publish를 거쳐 공개합니다. 공개 버전은 수정하지 않고 새 draft가 검토된 뒤 published 포인터를 바꿉니다. 승인 대상 해시는 보고서 content·인용 manifest·분석 계약 버전·온톨로지 버전·KG snapshot을 포함합니다. 새 보고서가 다른 원문·계약·snapshot을 사용하면 기존 승인을 재사용하지 않습니다. 원문 정정이 발생했다고 과거 보고서의 고정 입력을 덮어쓰지 않으며, 영향 검토 후 구버전 경고·철회 또는 새 버전 발행을 선택합니다.
 
 초안·검토·공개 정보는 로컬 PostgreSQL(정본)에 저장하고 dump에 포함합니다. 공개 데모(Render, 향후)는 export된 published 버전만 조회하며 Markdown 파일을 임시 디스크에 저장하지 않고 저장된 정본으로 응답합니다. 원문 비공개 범위가 있다면 공개 인용은 별도로 필터링하고 내부 원문 전체를 Markdown에 포함하지 않습니다.
 

@@ -108,7 +108,7 @@ sequenceDiagram
     participant Model as LangChain 구조화 모델
     participant DB as 로컬 PostgreSQL
     Admin->>API: 지원할 질문 유형·표본·보고서 요구 지정
-    API->>A: define_question_types → select_samples
+    API->>A: define_questions → select_samples
     A->>DB: 표본 원문 버전·기존 온톨로지 조회
     DB-->>A: 표본·버전·해시
     A->>Model: 온톨로지·근거·보고서 분석 계약 후보 요청
@@ -252,7 +252,7 @@ sequenceDiagram
     participant Pure as 주제·분할·검증 함수
     participant Extract as extract_candidates()
     participant Model as LangChain 구조화 모델
-    participant Resolve as canonicalize_candidates()
+    participant Resolve as canonicalize_entities()·resolve_event_candidates()
     Flow->>Read: version_id
     Flow->>DB: 승인 analysis_contract_version·실행 manifest 확인
     Read->>DB: 불변 원문 버전 조회
@@ -483,6 +483,7 @@ sequenceDiagram
     participant DB as 로컬 PostgreSQL
     participant Worker as Worker
     participant KG as 로컬 PostgreSQL 그래프 테이블
+    participant Backup as 로컬 dump 백업
     Admin->>API: 삭제 대상·재생성 옵션으로 미리보기
     API->>API: 관리자 인증·development 환경 확인
     API->>Reset: plan_part_a_reset(scope)
@@ -494,6 +495,15 @@ sequenceDiagram
     Reset->>DB: 연결 공개 보고서 철회·신규 작업 등록 차단
     Reset->>Worker: 대상 실행 중지 요청
     Worker-->>Reset: 실행 종료 확인
+    Reset->>Backup: backup_before_reset: 사전 dump 생성
+    Backup-->>Reset: dump 경로·해시
+    Reset->>Reset: verify_reset_backup: 파일·크기·pg_restore --list 확인
+    alt 사전 백업 또는 검증 실패
+        Reset->>DB: 초기화 중단 기록·범위 fence 해제
+        Reset-->>Admin: 삭제하지 않고 실패 사유 표시
+    else 사전 백업 검증 성공
+        Reset->>DB: dump 경로·해시를 reset 이력에 기록
+    end
     Reset->>DB: 이전 실행 토큰 무효화·checkpoint 참조 정리
     opt 영향 범위의 Part A KG 및 연결 Part B 포함
         Reset->>KG: 대상 주장·근거 제거 및 비공유 노드 정리
@@ -510,7 +520,7 @@ sequenceDiagram
     Reset-->>Admin: 초기화 결과·새 작업 ID
 ```
 
-실패하면 초기화 단계 이력으로 재개하고 재생성을 보류합니다. 연결 Part B가 있는데 함께 정리하지 않는 요청은 거부합니다. 초기화 범위의 새 작업 등록은 잠금 해제 전까지 제한합니다.
+삭제는 사전 dump 검증이 성공한 뒤에만 시작합니다([백업·복원](backup-restore.md)). 삭제 도중 실패하면 초기화 단계 이력으로 재개하고 재생성을 보류합니다. 연결 Part B가 있는데 함께 정리하지 않는 요청은 거부합니다. 초기화 범위의 새 작업 등록은 잠금 해제 전까지 제한합니다.
 
 범위 fence는 장시간 row lock과 다릅니다. Worker 종료·그래프 정리를 기다리는 동안 DB 트랜잭션을 열어두지 않습니다. 단계별로 짧게 잠금·상태를 확인하며 공개 포인터를 먼저 철회하고 삭제된 근거를 참조하는 보고서가 노출되지 않게 합니다. checkpoint는 지원되는 삭제 절차로 정리하고, 초기화 완료 전 늦게 도착한 작업 쓰기는 실행 토큰과 reset 세대로 거부합니다. 원문·감사 기록과 다른 보고서가 참조하는 공유 근거는 보존합니다.
 
@@ -692,7 +702,7 @@ Part A 후보 검색은 승인 온톨로지/기사 범위로, Part B는 ready sn
 | 7 적재·복구 | F09 | Part A 부분 실패·멱등성·ready snapshot 대조 |
 | 8 조회 | F10~F11 | 정확한 원문 버전·인용 추적 |
 | 9 관리자 | F10~F11 | 인증·허용 상태 변경·중복 방지·감사 기록 |
-| 10 개발 초기화 | F05·F08~F11 | 승인 버전 삭제·연결 결과 정리·원문 보존·재생성 |
+| 10 개발 초기화 | F05·F08~F11 | 사전 dump 검증 실패 시 삭제 중단·승인 버전 삭제·연결 결과 정리·원문 보존·재생성 |
 | 11 PWA | F11~F12 | 설치·오프라인 변경 차단·API 비캐시·업데이트·재접속 |
 | 12 dump 백업 | F12 | 성공 dump·별도 사본·보존·격리 복원 검증 |
 | 13 리서치 보고서 | F13·F10~F12 | 문장별 인용·상충·한계·검토·공개·버전별 다운로드 |

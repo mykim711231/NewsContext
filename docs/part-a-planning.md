@@ -48,11 +48,11 @@ LLM은 표본·업무 질문으로 타입·관계·속성·제약 후보를 생�
 
 선택 임베딩이 활성화되면 기존 별칭/키워드와 관계 정의 vector top-k로 후보를 찾고 EDC식 LLM 선택/거절 및 시간·domain/range·근거 검증을 수행합니다. AutoSchemaKG/KGGen의 병합 결과를 그대로 확정하지 않습니다. 후보 집합이 작은 경우 메모리 검색과 pgvector를 비교하고 전체 모델·FAISS stack을 무조건 도입하지 않습니다.
 
-`load_aliases → canonicalize_entities → resolve_event_candidates → revalidate_references → review_if_needed → build_graph_batch → write_graph_batch`
+`load_aliases → canonicalize_entities → resolve_event_candidates → revalidate_references → decide_review → build_graph_batch → write_graph_batch`
 
 별칭·기간·참여자·수치를 비교하되 동명 대상과 모호한 사건은 보류합니다. 문서별 Claim과 공통 Event는 분리하고 다른 기사에 같은 문장이 있다는 이유만으로 독립 검증 사실로 승격하지 않습니다. 기사에 귀속된 원인 설명은 REPORTED_CAUSE로 표현합니다.
 
-로컬 PostgreSQL은 원문·검증 결과·적재 입력의 정본이며 지식그래프도 같은 DB의 그래프 테이블(노드·관계·snapshot membership)에 둡니다([README 그래프 저장 방침](../README.md), 2026-11-17). 논리 참조·소속·삭제 제한은 프로그램이 검사하고 FK를 생성하지 않습니다. 그래프 쓰기는 고유 ID·멱등 키로 제어하고 업무 상태와 같은 트랜잭션에 묶습니다. checkpoint와 업무 쓰기의 자동 원자성은 가정하지 않습니다.
+로컬 PostgreSQL은 원문·검증 결과·적재 입력의 정본이며 지식그래프도 같은 DB의 그래프 테이블(노드·관계·snapshot membership)에 둡니다([README 그래프 저장 방침](../README.md), 2026-11-17). 논리 참조·소속·삭제 제한은 프로그램이 검사하고 FK를 생성하지 않습니다. 그래프 쓰기는 고유 ID·멱등 키로 제어하고, `write_graph_batch`가 그래프 upsert와 `graph_batch` 완료 기록을 한 트랜잭션으로 커밋합니다([README 단계명·상태값 정본](../README.md)). checkpoint와 업무 쓰기의 자동 원자성은 가정하지 않습니다.
 
 ### A4. Part B 인계 자료 확정
 
