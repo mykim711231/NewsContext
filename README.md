@@ -429,18 +429,20 @@ Part B: create_research_job → validate_part_a_handoff → freeze_kg_snapshot_a
 |---|---|---|
 | 모델 초기화 | `from langchain.chat_models import init_chat_model` | 설정에서 공급자·모델을 읽어 실행 시작 시 구성 |
 | 고정 추출 | `model.with_structured_output(CandidateBatch)` | 도구 선택이 필요 없는 MVP의 기본 추출 경로 |
-| 도구 사용 에이전트 | `from langchain.agents import create_agent` | 추후 외부 검색·도구 선택이 필요한 기능에서 사용 |
+| 도구 사용 에이전트 | `from langchain.agents import create_agent` | Part B 추가 근거 탐색의 제한된 읽기 도구 Agent에 사용([실행 구조 설계](docs/agent-runtime-design.md)); Part A 추출에는 쓰지 않음 |
 | 에이전트 구조화 출력 | `response_format`, `ProviderStrategy`, `ToolStrategy` | 공급자 기능에 맞게 선택; 결과는 `structured_response`에서 읽음 |
 | 프로세스 조립 | `StateGraph`, `START`, `END`, 함수 노드·조건부 edge | 신규 처리 흐름의 기본 구현 |
 | 검토·재개 | `interrupt`, `Command(resume=...)`, 영속 checkpointer | 같은 `thread_id`로 재개; 승인 대상 해시 검증 |
 | 상태 계약 | `TypedDict` 실행 상태, Pydantic 업무 데이터 | 노드는 상태를 직접 수정하지 않고 변경분 반환 |
 | 확장 | `Send`와 reducer | 문단 병렬 추출이 필요할 때만 도입; 병합·중복 규칙을 먼저 정의 |
 
+상태 필드·노드 분기·도구 레지스트리·하네스 정의는 [실행 구조 설계](docs/agent-runtime-design.md)에 둡니다.
+
 고정 추출은 [모델 API](https://docs.langchain.com/oss/python/langchain/models#structured-output)를 사용하며, 에이전트가 필요한 경우에는 [구조화 출력 API](https://docs.langchain.com/oss/python/langchain/structured-output)를 적용합니다. 출력 타입 검증 이후에도 근거·단위·참조 검증은 별도 업무 함수가 수행합니다. 공급자별 지원 방식과 모델의 도구·구조화 출력 동시 지원 여부는 통합 검사로 확인합니다.
 
 [Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)는 일반 Python 함수를 노드로 연결하므로 함수 중심 설계와 함께 사용할 수 있습니다. [Functional API](https://docs.langchain.com/oss/python/langgraph/functional-api)의 `@entrypoint`, `@task`도 검토했으나, 현재 공식 안내는 신규 워크플로에 Graph API를 권장하므로 기본 경로는 StateGraph로 확정합니다. Functional API는 기존 함수 흐름을 그대로 감싸는 별도 요구가 생길 때 재검토하며 같은 프로세스를 두 방식으로 중복 구현하지 않습니다.
 
-구현 시에는 동기 `invoke`를 로컬 worker의 출발점으로 사용합니다. 비동기 경로를 추가할 경우 HTTP·모델·DB·체크포인터까지 비동기 지원을 맞추고 `ainvoke`를 사용합니다. 재개될 수 있는 노드에는 외부 쓰기를 여러 개 혼합하지 않고 적재·완료 표시를 별도 노드로 둡니다. [interrupt 문서](https://docs.langchain.com/oss/python/langgraph/interrupts)에 따라 검토 노드의 재실행을 고려하고 중단 신호를 일반 예외 처리로 삼키지 않습니다.
+구현 시에는 동기 `invoke`를 로컬 worker의 출발점으로 사용합니다. 비동기 경로를 추가할 경우 HTTP·모델·DB·체크포인터까지 비동기 지원을 맞추고 `ainvoke`를 사용합니다. 재개될 수 있는 노드의 외부 쓰기는 한 트랜잭션으로 묶어 부분 완료 상태를 남기지 않습니다(`write_graph_batch`는 적재와 완료 기록을 함께 커밋). 서로 다른 저장소에 걸치는 쓰기는 한 노드에 섞지 않고 노드를 나눕니다. [interrupt 문서](https://docs.langchain.com/oss/python/langgraph/interrupts)에 따라 검토 노드의 재실행을 고려하고 중단 신호를 일반 예외 처리로 삼키지 않습니다.
 
 버전 적용 완료 기준은 Python·LangChain·LangGraph·공급자 패키지·체크포인터의 호환 버전을 `uv.lock`에 고정하고, 구조화 출력·조건 분기·검토 재개·프로세스 재시작·중복 적재 검사를 통과하는 것입니다. 아직 패키지 설치나 호환성 실행 검증은 수행하지 않았습니다.
 
